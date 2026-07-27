@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="sqlite-net-pcl" Version="1.11.285" />
+    <Reference Include="VexTile.Mapbox.VectorTile.VectorTileReader">
+      <HintPath>E:\Projects\GitHub\Mapsui48\Mapsui48.Demo\bin\Debug\Host\VexTile.Mapbox.VectorTile.VectorTileReader.dll</HintPath>
+    </Reference>
+    <Reference Include="VexTile.Common">
+      <HintPath>E:\Projects\GitHub\Mapsui48\Mapsui48.Demo\bin\Debug\Host\VexTile.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="VexTile.Data">
+      <HintPath>E:\Projects\GitHub\Mapsui48\Mapsui48.Demo\bin\Debug\Host\VexTile.Data.dll</HintPath>
+    </Reference>
+    <Reference Include="VexTile.Mapbox.VectorTile.Geometry">
+      <HintPath>E:\Projects\GitHub\Mapsui48\Mapsui48.Demo\bin\Debug\Host\VexTile.Mapbox.VectorTile.Geometry.dll</HintPath>
+    </Reference>
+    <Reference Include="NetTopologySuite.IO.VectorTiles.Mapbox">
+      <HintPath>E:\Projects\GitHub\Mapsui48\Mapsui48.Demo\bin\Debug\Host\NetTopologySuite.IO.VectorTiles.Mapbox.dll</HintPath>
+    </Reference>
+    <Reference Include="NetTopologySuite.IO.VectorTiles">
+      <HintPath>E:\Projects\GitHub\Mapsui48\Mapsui48.Demo\bin\Debug\Host\NetTopologySuite.IO.VectorTiles.dll</HintPath>
+    </Reference>
+    <Reference Include="NetTopologySuite">
+      <HintPath>E:\Projects\GitHub\Mapsui48\Mapsui48.Demo\bin\Debug\Host\NetTopologySuite.dll</HintPath>
+    </Reference>
+    <Reference Include="NetTopologySuite.Features">
+      <HintPath>E:\Projects\GitHub\Mapsui48\Mapsui48.Demo\bin\Debug\Host\NetTopologySuite.Features.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

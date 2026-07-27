@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Mapsui48.Client/Mapsui48.Client.csproj" />
+  <Project Path="Mapsui48.Demo/Mapsui48.Demo.csproj" />
+  <Project Path="Mapsui48.Host/Mapsui48.Host.csproj" />
+  <Project Path="Mapsui48.Protocol/Mapsui48.Protocol.csproj" />
+</Solution>

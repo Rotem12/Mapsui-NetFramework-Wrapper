@@ -1,0 +1,11 @@
+<Window x:Class="Mapsui48.Host.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:mapsui="clr-namespace:Mapsui.UI.Wpf;assembly=Mapsui.UI.Wpf"
+        Title="Mapsui Host" Height="450" Width="800"
+        WindowStyle="None" ResizeMode="NoResize"
+        AllowsTransparency="False" ShowInTaskbar="False">
+    <Grid>
+        <mapsui:MapControl x:Name="MapControl" />
+    </Grid>
+</Window>
