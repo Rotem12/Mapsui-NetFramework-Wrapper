@@ -1,0 +1,33 @@
+# Visual Studio / Build Artifacts
+.vs/
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Logs & Temporary outputs
+*.log
+*.tmp
+*.bak
+*.journal
+mvt_debug.txt
+validation_success.txt
+demo_err.log
+demo_out.log
+generation.log
+
+# Heavy Data & Binary Map Files
+*.mbtiles
+*.mbtiles-journal
+*.pbf
+*.zip
+*.exe
+*.jar
+tools/
+tilemaker_store/
+data/
+
+# Temporary backups
+*.backup
