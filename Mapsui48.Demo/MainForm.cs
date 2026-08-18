@@ -11,10 +11,12 @@ namespace Mapsui48.Demo
     public partial class MainForm : Form
     {
         private MapHostPanel _mapPanel;
+        private FloatingTooltipForm _tooltipForm;
 
         public MainForm()
         {
             InitializeComponent();
+            _tooltipForm = new FloatingTooltipForm();
             InitializeMap();
         }
 
@@ -32,10 +34,39 @@ namespace Mapsui48.Demo
             _mapPanel.MapClicked += MapPanel_MapClicked;
             _mapPanel.FeatureClicked += MapPanel_FeatureClicked;
             _mapPanel.ViewportChanged += MapPanel_ViewportChanged;
+            
+            // Hook live PointerMoved event for the Custom Tooltip Test
+            _mapPanel.PointerMoved += MapPanel_PointerMoved;
 
             panelMapContainer.Controls.Add(_mapPanel);
 
             InitializeProviderDropdown();
+        }
+
+        private void MapPanel_PointerMoved(object sender, MapPointerMovedEvent e)
+        {
+            if (!IsHandleCreated || IsDisposed) return;
+            Invoke((MethodInvoker)delegate
+            {
+                // Update the floating tooltip positioned next to the cursor
+                var screenPoint = Cursor.Position;
+                _tooltipForm.UpdateTooltip($"Lat: {e.Latitude:F5}\nLon: {e.Longitude:F5}", screenPoint);
+
+                // Also display in the status bar
+                lblStatus.Text = $"Cursor: {e.Latitude:F5}, {e.Longitude:F5} (X:{e.ScreenX:0}, Y:{e.ScreenY:0})";
+            });
+        }
+
+        protected override void OnDeactivate(EventArgs e)
+        {
+            base.OnDeactivate(e);
+            _tooltipForm?.Hide();
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            _tooltipForm?.Dispose();
+            base.OnFormClosed(e);
         }
 
         private class ProviderItem
@@ -180,6 +211,59 @@ namespace Mapsui48.Demo
             catch (Exception ex)
             {
                 MessageBox.Show(ex.Message);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lightweight non-activating floating tooltip window that renders above all Win32 and OpenGL child surfaces.
+    /// </summary>
+    internal class FloatingTooltipForm : Form
+    {
+        private readonly Label _lblText;
+
+        public FloatingTooltipForm()
+        {
+            FormBorderStyle = FormBorderStyle.None;
+            StartPosition = FormStartPosition.Manual;
+            ShowInTaskbar = false;
+            BackColor = Color.FromArgb(20, 20, 20);
+            TopMost = true;
+            AutoSize = true;
+            AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            Padding = new Padding(1);
+
+            _lblText = new Label
+            {
+                AutoSize = true,
+                BackColor = Color.FromArgb(30, 30, 30),
+                ForeColor = Color.FromArgb(0, 229, 255),
+                Font = new Font("Consolas", 9.5f, FontStyle.Bold),
+                Padding = new Padding(6, 4, 6, 4),
+                Margin = new Padding(0)
+            };
+            Controls.Add(_lblText);
+        }
+
+        protected override bool ShowWithoutActivation => true;
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var cp = base.CreateParams;
+                cp.ExStyle |= 0x08000000 | 0x00000080; // WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
+                return cp;
+            }
+        }
+
+        public void UpdateTooltip(string text, Point screenPoint)
+        {
+            _lblText.Text = text;
+            Location = new Point(screenPoint.X + 16, screenPoint.Y + 16);
+            if (!Visible)
+            {
+                Show();
             }
         }
     }

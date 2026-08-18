@@ -46,6 +46,13 @@ namespace Mapsui48.Host
         
         private bool _isAttached = false;
         
+        private System.Windows.Forms.Timer? _mouseTimer;
+        private Point _lastScreenPoint;
+        private Point _dragStartClientPoint;
+        private bool _isDraggingSelection = false;
+        private bool _wasRightDown = false;
+        private bool _wasShiftLeftDown = false;
+
         public void AttachMapControl()
         {
             _isAttached = true;
@@ -54,114 +61,107 @@ namespace Mapsui48.Host
                 this.Controls.Add(MapControl);
             }
             
-            // Directly hook mouse events to MapControl and all child controls (like OpenGL view)
-            HookControlEvents(MapControl);
+            // Start high-performance 40 FPS cursor tracking timer
+            if (_mouseTimer == null)
+            {
+                _mouseTimer = new System.Windows.Forms.Timer { Interval = 25 };
+                _mouseTimer.Tick += MouseTimer_Tick;
+                _mouseTimer.Start();
+            }
 
             // Now that we are reparented, make the form visible
             this.Visible = true;
         }
 
-        private void HookControlEvents(Control ctrl)
+        private void MouseTimer_Tick(object? sender, EventArgs e)
         {
-            ctrl.MouseMove -= OnControlMouseMove;
-            ctrl.MouseMove += OnControlMouseMove;
-            ctrl.MouseDown -= OnControlMouseDown;
-            ctrl.MouseDown += OnControlMouseDown;
-            ctrl.MouseUp -= OnControlMouseUp;
-            ctrl.MouseUp += OnControlMouseUp;
-            ctrl.ControlAdded += (s, e) => { if (e.Control != null) HookControlEvents(e.Control); };
+            if (!this.Visible || MapControl == null || !MapControl.IsHandleCreated) return;
 
-            foreach (Control child in ctrl.Controls)
-            {
-                HookControlEvents(child);
-            }
-        }
+            Point screenPt = Control.MousePosition;
+            Point clientPt = MapControl.PointToClient(screenPt);
 
-        private void OnControlMouseDown(object? sender, MouseEventArgs e)
-        {
-            Point clientPoint = (sender == MapControl) ? e.Location : MapControl.PointToClient(((Control)sender!).PointToScreen(e.Location));
-            if (e.Button == MouseButtons.Right)
-            {
-                _dragStartPoint = clientPoint;
-                _isRightDragging = true;
-            }
-            else if (e.Button == MouseButtons.Left && Control.ModifierKeys.HasFlag(Keys.Shift))
-            {
-                _dragStartPoint = clientPoint;
-                _isShiftLeftDragging = true;
-            }
-        }
+            bool isInside = MapControl.ClientRectangle.Contains(clientPt);
+            bool isRightDown = (Control.MouseButtons & MouseButtons.Right) != 0;
+            bool isLeftDown = (Control.MouseButtons & MouseButtons.Left) != 0;
+            bool isShiftDown = Control.ModifierKeys.HasFlag(Keys.Shift);
+            bool isShiftLeftDown = isLeftDown && isShiftDown;
 
-        private void OnControlMouseMove(object? sender, MouseEventArgs e)
-        {
-            Point clientPoint = (sender == MapControl) ? e.Location : MapControl.PointToClient(((Control)sender!).PointToScreen(e.Location));
-            if (_isRightDragging || _isShiftLeftDragging)
+            // 1. Detect Mouse Down for Dragging / Selection
+            if (isInside && !_isDraggingSelection)
             {
-                int dx = Math.Abs(clientPoint.X - _dragStartPoint.X);
-                int dy = Math.Abs(clientPoint.Y - _dragStartPoint.Y);
-                if (dx > 6 || dy > 6)
+                if (isRightDown && !_wasRightDown)
                 {
-                    UpdateSelectionPolygon(_dragStartPoint, clientPoint);
+                    _dragStartClientPoint = clientPt;
+                    _wasRightDown = true;
+                }
+                else if (isShiftLeftDown && !_wasShiftLeftDown)
+                {
+                    _dragStartClientPoint = clientPt;
+                    _wasShiftLeftDown = true;
                 }
             }
-            else
+
+            // 2. Detect Dragging in Progress
+            if (_wasRightDown || _wasShiftLeftDown)
             {
-                long now = Environment.TickCount64;
-                if (now - _lastHoverTick >= 35)
+                int dx = Math.Abs(clientPt.X - _dragStartClientPoint.X);
+                int dy = Math.Abs(clientPt.Y - _dragStartClientPoint.Y);
+                if (dx > 8 || dy > 8)
                 {
-                    _lastHoverTick = now;
-                    var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPoint.X, clientPoint.Y);
+                    _isDraggingSelection = true;
+                    UpdateSelectionPolygon(_dragStartClientPoint, clientPt);
+                }
+            }
+
+            // 3. Detect Mouse Up / Release
+            if (_wasRightDown && !isRightDown)
+            {
+                _wasRightDown = false;
+                if (_isDraggingSelection)
+                {
+                    _isDraggingSelection = false;
+                    FinishAreaSelection(_dragStartClientPoint, clientPt);
+                }
+                else if (isInside)
+                {
+                    // Standard Right Click
+                    var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPt.X, clientPt.Y);
                     var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
-
-                    SendEvent(new Protocol.MapPointerMovedEvent
-                    {
-                        Latitude = lat,
-                        Longitude = lon,
-                        ScreenX = clientPoint.X,
-                        ScreenY = clientPoint.Y
-                    });
-                }
-            }
-        }
-
-        private void OnControlMouseUp(object? sender, MouseEventArgs e)
-        {
-            Point clientPoint = (sender == MapControl) ? e.Location : MapControl.PointToClient(((Control)sender!).PointToScreen(e.Location));
-            if (_isRightDragging)
-            {
-                _isRightDragging = false;
-                int dx = Math.Abs(clientPoint.X - _dragStartPoint.X);
-                int dy = Math.Abs(clientPoint.Y - _dragStartPoint.Y);
-
-                if (dx > 6 || dy > 6)
-                {
-                    FinishAreaSelection(_dragStartPoint, clientPoint);
-                }
-                else
-                {
-                    var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPoint.X, clientPoint.Y);
-                    var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
-
                     SendEvent(new Protocol.MapClickedEvent
                     {
                         Latitude = lat,
                         Longitude = lon,
-                        ScreenX = clientPoint.X,
-                        ScreenY = clientPoint.Y,
+                        ScreenX = clientPt.X,
+                        ScreenY = clientPt.Y,
                         Button = "Right"
                     });
                 }
             }
-            else if (_isShiftLeftDragging)
-            {
-                _isShiftLeftDragging = false;
-                int dx = Math.Abs(clientPoint.X - _dragStartPoint.X);
-                int dy = Math.Abs(clientPoint.Y - _dragStartPoint.Y);
 
-                if (dx > 6 || dy > 6)
+            if (_wasShiftLeftDown && !isLeftDown)
+            {
+                _wasShiftLeftDown = false;
+                if (_isDraggingSelection)
                 {
-                    FinishAreaSelection(_dragStartPoint, clientPoint);
+                    _isDraggingSelection = false;
+                    FinishAreaSelection(_dragStartClientPoint, clientPt);
                 }
+            }
+
+            // 4. Pointer Movement (Hover)
+            if (isInside && screenPt != _lastScreenPoint && !_isDraggingSelection)
+            {
+                _lastScreenPoint = screenPt;
+                var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPt.X, clientPt.Y);
+                var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
+
+                SendEvent(new Protocol.MapPointerMovedEvent
+                {
+                    Latitude = lat,
+                    Longitude = lon,
+                    ScreenX = clientPt.X,
+                    ScreenY = clientPt.Y
+                });
             }
         }
 
@@ -193,11 +193,6 @@ namespace Mapsui48.Host
         {
             _pipeServer?.SendEvent(evt);
         }
-
-        private bool _isRightDragging;
-        private bool _isShiftLeftDragging;
-        private Point _dragStartPoint;
-        private long _lastHoverTick = 0;
 
         private void UpdateSelectionPolygon(Point p1, Point p2)
         {
