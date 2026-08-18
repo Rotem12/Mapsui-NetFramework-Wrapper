@@ -60,19 +60,39 @@ namespace Mapsui48.Client
             };
             _client.PointerMoved += (s, e) => 
             {
+                if (IsHandleCreated && !IsDisposed)
+                {
+                    try
+                    {
+                        BeginInvoke((MethodInvoker)delegate
+                        {
+                            PointerMoved?.Invoke(this, e);
+                        });
+                        return;
+                    }
+                    catch { }
+                }
                 PointerMoved?.Invoke(this, e);
             };
             _client.AreaSelected += (s, e) => 
             {
-                if (!IsHandleCreated || IsDisposed) return;
-                Invoke((MethodInvoker)delegate
+                if (IsHandleCreated && !IsDisposed)
                 {
-                    if (EnableBuiltInDownloadOverlay)
+                    try
                     {
-                        ShowDownloadOverlay(e);
+                        BeginInvoke((MethodInvoker)delegate
+                        {
+                            if (EnableBuiltInDownloadOverlay)
+                            {
+                                ShowDownloadOverlay(e);
+                            }
+                            AreaSelected?.Invoke(this, e);
+                        });
+                        return;
                     }
-                    AreaSelected?.Invoke(this, e);
-                });
+                    catch { }
+                }
+                AreaSelected?.Invoke(this, e);
             };
         }
 

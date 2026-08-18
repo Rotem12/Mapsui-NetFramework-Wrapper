@@ -21,13 +21,25 @@ namespace Mapsui48.Client
                 // Default to Host subfolder
                 hostExePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Host", "Mapsui48.Host.exe");
                 
-                // Fallback to same directory if not found in Host subfolder (for backwards compatibility during dev)
+                // Fallback 1: Same directory
                 if (!File.Exists(hostExePath))
                     hostExePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Mapsui48.Host.exe");
+
+                // Fallback 2: Project development build directories
+                if (!File.Exists(hostExePath))
+                {
+                    string p1 = @"E:\Projects\GitHub\Mapsui-NetFramework-Wrapper\Mapsui48.Demo\bin\Debug\Host\Mapsui48.Host.exe";
+                    if (File.Exists(p1)) hostExePath = p1;
+                }
+                if (!File.Exists(hostExePath))
+                {
+                    string p2 = @"E:\Projects\GitHub\Mapsui48\Mapsui48.Demo\bin\Debug\Host\Mapsui48.Host.exe";
+                    if (File.Exists(p2)) hostExePath = p2;
+                }
             }
 
             if (!File.Exists(hostExePath))
-                throw new FileNotFoundException($"Host executable not found at {hostExePath}");
+                throw new FileNotFoundException($"Host executable not found at {hostExePath}. Please ensure the Host directory is copied to your output folder.");
 
             var startInfo = new ProcessStartInfo
             {

@@ -189,25 +189,30 @@ namespace Mapsui48.Host.Services
             var (x, y) = CoordinateHelper.ToMercator(cmd.Latitude, cmd.Longitude);
             var feature = new PointFeature(new MPoint(x, y)) { ["ID"] = featureId };
 
+            double scale = cmd.Scale > 0 ? cmd.Scale : 1.0;
+            var color = Mapsui.Styles.Color.FromString(cmd.Color ?? "#FFFF0000");
+
+            // Vector circle symbol rendered cleanly at any scale without white box artifacts
+            feature.Styles.Add(new SymbolStyle
+            {
+                SymbolType = SymbolType.Ellipse,
+                SymbolScale = scale,
+                Fill = new Mapsui.Styles.Brush(color),
+                Outline = new Mapsui.Styles.Pen(Mapsui.Styles.Color.FromArgb(220, 0, 0, 0), Math.Max(1.0, scale * 1.5))
+            });
+
             if (!string.IsNullOrEmpty(cmd.Label))
             {
                 feature.Styles.Add(new LabelStyle
                 {
                     Text = cmd.Label,
-                    BackColor = new Mapsui.Styles.Brush(Mapsui.Styles.Color.White),
-                    ForeColor = Mapsui.Styles.Color.Black,
-                    Halo = new Mapsui.Styles.Pen(Mapsui.Styles.Color.White, 2),
-                    Offset = new Offset(0, -16)
+                    BackColor = null, // Transparent background (removes the solid white box!)
+                    ForeColor = Mapsui.Styles.Color.White,
+                    Halo = new Mapsui.Styles.Pen(Mapsui.Styles.Color.FromArgb(220, 0, 0, 0), 2),
+                    Font = new Mapsui.Styles.Font { FontFamily = "Arial", Size = 9.5f, Bold = true },
+                    Offset = new Offset(0, -10 * scale - 6)
                 });
             }
-
-            var color = Mapsui.Styles.Color.FromString(cmd.Color ?? "#FFFF0000");
-            feature.Styles.Add(new SymbolStyle
-            {
-                SymbolScale = cmd.Scale > 0 ? cmd.Scale : 1.0,
-                Fill = new Mapsui.Styles.Brush(color),
-                Outline = new Mapsui.Styles.Pen(Mapsui.Styles.Color.Black, 1)
-            });
 
             state.Features[featureId] = feature;
             state.Layer.DataSource = new MemoryProvider(state.Features.Values);
