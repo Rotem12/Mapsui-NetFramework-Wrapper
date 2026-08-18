@@ -115,14 +115,36 @@ namespace Mapsui48.Host.Services
         {
             // Try to find the offline MBTiles layer first to use its specific extent
             var offlineLayer = _mapControl.Map.Layers.FirstOrDefault(l => l.Name == "BaseMap_Offline");
-            var extent = offlineLayer?.Extent ?? _mapControl.Map.Extent;
+            var extent = offlineLayer?.Extent;
 
-            if (extent != null)
+            if (extent != null && extent.Width > 0 && extent.Height > 0)
             {
+                MRect mercatorExtent = extent;
+                // Check if extent is in WGS84 degrees (bounds between -180 and 180)
+                if (extent.Min.X >= -180.0 && extent.Max.X <= 180.0 && extent.Min.Y >= -90.0 && extent.Max.Y <= 90.0)
+                {
+                    var (minX, minY) = CoordinateHelper.ToMercator(extent.Min.Y, extent.Min.X);
+                    var (maxX, maxY) = CoordinateHelper.ToMercator(extent.Max.Y, extent.Max.X);
+                    mercatorExtent = new MRect(Math.Min(minX, maxX), Math.Min(minY, maxY), Math.Max(minX, maxX), Math.Max(minY, maxY));
+                }
+
                 if (durationMs.HasValue && durationMs.Value > 0)
-                    _mapControl.Map.Navigator.ZoomToBox(extent, Mapsui.MBoxFit.Fit, durationMs.Value);
+                    _mapControl.Map.Navigator.ZoomToBox(mercatorExtent, Mapsui.MBoxFit.Fit, durationMs.Value);
                 else
-                    _mapControl.Map.Navigator.ZoomToBox(extent, Mapsui.MBoxFit.Fit);
+                    _mapControl.Map.Navigator.ZoomToBox(mercatorExtent, Mapsui.MBoxFit.Fit);
+            }
+            else
+            {
+                // Safe Fallback: Center on Israel / default coordinates
+                var (cx, cy) = CoordinateHelper.ToMercator(31.5, 34.75);
+                var res = CoordinateHelper.ZoomLevelToResolution(10);
+                if (durationMs.HasValue && durationMs.Value > 0)
+                    _mapControl.Map.Navigator.CenterOnAndZoomTo(new MPoint(cx, cy), res, durationMs.Value);
+                else
+                {
+                    _mapControl.Map.Navigator.CenterOn(new MPoint(cx, cy));
+                    _mapControl.Map.Navigator.ZoomTo(res);
+                }
             }
         }
 

@@ -87,16 +87,17 @@ namespace Mapsui48.Host
         }
 
         private const int WM_LBUTTONDOWN = 0x0201;
+        private const int WM_LBUTTONUP = 0x0202;
         private const int WM_RBUTTONDOWN = 0x0204;
         private const int WM_RBUTTONUP = 0x0205;
         private const int WM_MOUSEMOVE = 0x0200;
 
-        private bool _isSelectingArea;
-        private bool _isDraggingSelection;
-        private Point _selectionStart;
-        private Point _selectionCurrent;
+        private bool _isRightDragging;
+        private bool _isShiftLeftDragging;
+        private Point _dragStartPoint;
+        private long _lastHoverTick = 0;
 
-        // Automatically add message filter so we can globally catch Ctrl+RightClick
+        // Automatically add message filter so we can catch hover and selection
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
@@ -107,81 +108,173 @@ namespace Mapsui48.Host
         {
             if (m.Msg == WM_RBUTTONDOWN)
             {
-                if (Control.ModifierKeys.HasFlag(Keys.Control))
+                var screenPoint = Control.MousePosition;
+                var clientPoint = MapControl.PointToClient(screenPoint);
+                if (MapControl.ClientRectangle.Contains(clientPoint))
                 {
-                    var screenPoint = Control.MousePosition;
-                    var clientPoint = MapControl.PointToClient(screenPoint);
-                    if (MapControl.ClientRectangle.Contains(clientPoint))
+                    _dragStartPoint = clientPoint;
+                    _isRightDragging = true;
+                    return false;
+                }
+            }
+            else if (m.Msg == WM_LBUTTONDOWN && Control.ModifierKeys.HasFlag(Keys.Shift))
+            {
+                var screenPoint = Control.MousePosition;
+                var clientPoint = MapControl.PointToClient(screenPoint);
+                if (MapControl.ClientRectangle.Contains(clientPoint))
+                {
+                    _dragStartPoint = clientPoint;
+                    _isShiftLeftDragging = true;
+                    return true; // Consume event to prevent default map panning
+                }
+            }
+            else if (m.Msg == WM_MOUSEMOVE)
+            {
+                var screenPoint = Control.MousePosition;
+                var clientPoint = MapControl.PointToClient(screenPoint);
+                if (MapControl.ClientRectangle.Contains(clientPoint))
+                {
+                    if (_isRightDragging || _isShiftLeftDragging)
                     {
-                        _isSelectingArea = true;
-                        _isDraggingSelection = true;
-                        _selectionStart = screenPoint;
-                        _selectionCurrent = screenPoint;
-                        Cursor = Cursors.Cross;
-                        ControlPaint.DrawReversibleFrame(GetSelectionRectangle(), Color.Black, FrameStyle.Dashed);
-                        return true; // Consume event
+                        int dx = Math.Abs(clientPoint.X - _dragStartPoint.X);
+                        int dy = Math.Abs(clientPoint.Y - _dragStartPoint.Y);
+                        if (dx > 6 || dy > 6)
+                        {
+                            UpdateSelectionPolygon(_dragStartPoint, clientPoint);
+                            return true;
+                        }
+                    }
+                    else
+                    {
+                        // Throttled mouse hover event for floating tooltip (every 40ms)
+                        long now = Environment.TickCount64;
+                        if (now - _lastHoverTick >= 40)
+                        {
+                            _lastHoverTick = now;
+                            var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPoint.X, clientPoint.Y);
+                            var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
+
+                            SendEvent(new Protocol.MapPointerMovedEvent
+                            {
+                                Latitude = lat,
+                                Longitude = lon,
+                                ScreenX = clientPoint.X,
+                                ScreenY = clientPoint.Y
+                            });
+                        }
                     }
                 }
             }
-            else if (m.Msg == WM_MOUSEMOVE && _isDraggingSelection)
+            else if (m.Msg == WM_RBUTTONUP)
             {
-                var screenPoint = Control.MousePosition;
-                // Erase old
-                ControlPaint.DrawReversibleFrame(GetSelectionRectangle(), Color.Black, FrameStyle.Dashed);
-                _selectionCurrent = screenPoint;
-                // Draw new
-                ControlPaint.DrawReversibleFrame(GetSelectionRectangle(), Color.Black, FrameStyle.Dashed);
-                return true;
+                if (_isRightDragging)
+                {
+                    _isRightDragging = false;
+                    var screenPoint = Control.MousePosition;
+                    var clientPoint = MapControl.PointToClient(screenPoint);
+                    int dx = Math.Abs(clientPoint.X - _dragStartPoint.X);
+                    int dy = Math.Abs(clientPoint.Y - _dragStartPoint.Y);
+
+                    if (dx > 6 || dy > 6)
+                    {
+                        // Finish Area Selection
+                        FinishAreaSelection(_dragStartPoint, clientPoint);
+                        return true;
+                    }
+                    else
+                    {
+                        // Standard Right-Click
+                        var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPoint.X, clientPoint.Y);
+                        var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
+
+                        SendEvent(new Protocol.MapClickedEvent
+                        {
+                            Latitude = lat,
+                            Longitude = lon,
+                            ScreenX = clientPoint.X,
+                            ScreenY = clientPoint.Y,
+                            Button = "Right"
+                        });
+                    }
+                }
             }
-            else if (m.Msg == WM_RBUTTONUP && _isDraggingSelection)
+            else if (m.Msg == WM_LBUTTONUP && _isShiftLeftDragging)
             {
+                _isShiftLeftDragging = false;
                 var screenPoint = Control.MousePosition;
-                // Erase old
-                ControlPaint.DrawReversibleFrame(GetSelectionRectangle(), Color.Black, FrameStyle.Dashed);
-                _isDraggingSelection = false;
-                _isSelectingArea = false;
-                Cursor = Cursors.Default;
-                
-                FinishAreaSelection();
-                return true;
+                var clientPoint = MapControl.PointToClient(screenPoint);
+                int dx = Math.Abs(clientPoint.X - _dragStartPoint.X);
+                int dy = Math.Abs(clientPoint.Y - _dragStartPoint.Y);
+
+                if (dx > 6 || dy > 6)
+                {
+                    FinishAreaSelection(_dragStartPoint, clientPoint);
+                    return true;
+                }
             }
 
             return false;
         }
 
-        private Rectangle GetSelectionRectangle()
+        private void UpdateSelectionPolygon(Point p1, Point p2)
         {
-            return new Rectangle(
-                Math.Min(_selectionStart.X, _selectionCurrent.X),
-                Math.Min(_selectionStart.Y, _selectionCurrent.Y),
-                Math.Abs(_selectionStart.X - _selectionCurrent.X),
-                Math.Abs(_selectionStart.Y - _selectionCurrent.Y)
-            );
-        }
-
-        private void FinishAreaSelection()
-        {
-            var p1 = MapControl.PointToClient(_selectionStart);
-            var p2 = MapControl.PointToClient(_selectionCurrent);
-            
             var w1 = MapControl.Map.Navigator.Viewport.ScreenToWorld(p1.X, p1.Y);
             var w2 = MapControl.Map.Navigator.Viewport.ScreenToWorld(p2.X, p2.Y);
 
             var (lat1, lon1) = Helpers.CoordinateHelper.ToWgs84(w1.X, w1.Y);
             var (lat2, lon2) = Helpers.CoordinateHelper.ToWgs84(w2.X, w2.Y);
-            
-            var rect = GetSelectionRectangle();
+
+            double minLat = Math.Min(lat1, lat2);
+            double maxLat = Math.Max(lat1, lat2);
+            double minLon = Math.Min(lon1, lon2);
+            double maxLon = Math.Max(lon1, lon2);
+
+            _mapService.AddPolygon(new Protocol.AddPolygonCommand
+            {
+                LayerName = "Selection",
+                FeatureId = "ActiveSelectionBox",
+                Coordinates = new[]
+                {
+                    new Protocol.Coordinate(minLat, minLon),
+                    new Protocol.Coordinate(minLat, maxLon),
+                    new Protocol.Coordinate(maxLat, maxLon),
+                    new Protocol.Coordinate(maxLat, minLon),
+                    new Protocol.Coordinate(minLat, minLon)
+                },
+                FillColor = "#30FF0000",
+                OutlineColor = "#FFFF0000",
+                OutlineWidth = 2
+            });
+        }
+
+        private void FinishAreaSelection(Point p1, Point p2)
+        {
+            var w1 = MapControl.Map.Navigator.Viewport.ScreenToWorld(p1.X, p1.Y);
+            var w2 = MapControl.Map.Navigator.Viewport.ScreenToWorld(p2.X, p2.Y);
+
+            var (lat1, lon1) = Helpers.CoordinateHelper.ToWgs84(w1.X, w1.Y);
+            var (lat2, lon2) = Helpers.CoordinateHelper.ToWgs84(w2.X, w2.Y);
+
+            double minLat = Math.Min(lat1, lat2);
+            double maxLat = Math.Max(lat1, lat2);
+            double minLon = Math.Min(lon1, lon2);
+            double maxLon = Math.Max(lon1, lon2);
+
+            int minX = Math.Min(p1.X, p2.X);
+            int minY = Math.Min(p1.Y, p2.Y);
+            int width = Math.Abs(p1.X - p2.X);
+            int height = Math.Abs(p1.Y - p2.Y);
 
             SendEvent(new Protocol.AreaSelectedEvent
             {
-                MinLat = Math.Min(lat1, lat2),
-                MinLon = Math.Min(lon1, lon2),
-                MaxLat = Math.Max(lat1, lat2),
-                MaxLon = Math.Max(lon1, lon2),
-                ScreenX = rect.X,
-                ScreenY = rect.Y,
-                ScreenWidth = rect.Width,
-                ScreenHeight = rect.Height
+                MinLat = minLat,
+                MinLon = minLon,
+                MaxLat = maxLat,
+                MaxLon = maxLon,
+                ScreenX = minX,
+                ScreenY = minY,
+                ScreenWidth = width,
+                ScreenHeight = height
             });
         }
 

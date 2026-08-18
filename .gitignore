@@ -24,6 +24,10 @@ generation.log
 *.pbf
 *.zip
 *.exe
+*.jar
+tools/
+tilemaker_store/
+data/
 
 # Temporary backups
 *.backup

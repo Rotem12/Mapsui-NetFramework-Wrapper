@@ -19,8 +19,12 @@ namespace Mapsui48.Client
         public event EventHandler<MapClickedEvent> MapClicked;
         public event EventHandler<FeatureClickedEvent> FeatureClicked;
         public event EventHandler<ViewportChangedEvent> ViewportChanged;
+        public event EventHandler<AreaSelectedEvent> AreaSelected;
+        public event EventHandler<MapPointerMovedEvent> PointerMoved;
         
         public event Func<BoundingBox, int, int, System.Threading.CancellationToken, Task> OnDownloadStarted;
+
+        public bool EnableBuiltInDownloadOverlay { get; set; } = false;
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool MoveWindow(IntPtr hwnd, int x, int y, int cx, int cy, bool repaint);
@@ -29,22 +33,45 @@ namespace Mapsui48.Client
         private static extern IntPtr GetWindow(IntPtr hWnd, uint uCmd);
         private const uint GW_CHILD = 5;
 
+        public Func<Task> CustomHomeAction { get; set; }
+
         public MapHostPanel()
         {
             _client = new MapsuiHostClient();
-            _client.MapClicked += (s, e) => MapClicked?.Invoke(this, e);
+            _client.MapClicked += (s, e) => 
+            {
+                if (IsHandleCreated && !IsDisposed)
+                {
+                    Invoke((MethodInvoker)delegate
+                    {
+                        if (e.Button == "Right" && this.ContextMenuStrip != null)
+                        {
+                            this.ContextMenuStrip.Show(this, new System.Drawing.Point((int)e.ScreenX, (int)e.ScreenY));
+                        }
+                    });
+                }
+                MapClicked?.Invoke(this, e);
+            };
             _client.FeatureClicked += (s, e) => FeatureClicked?.Invoke(this, e);
             _client.ViewportChanged += (s, e) => 
             {
                 CurrentZoom = e.ZoomLevel;
                 ViewportChanged?.Invoke(this, e);
             };
+            _client.PointerMoved += (s, e) => 
+            {
+                PointerMoved?.Invoke(this, e);
+            };
             _client.AreaSelected += (s, e) => 
             {
                 if (!IsHandleCreated || IsDisposed) return;
                 Invoke((MethodInvoker)delegate
                 {
-                    ShowDownloadOverlay(e);
+                    if (EnableBuiltInDownloadOverlay)
+                    {
+                        ShowDownloadOverlay(e);
+                    }
+                    AreaSelected?.Invoke(this, e);
                 });
             };
         }
@@ -233,6 +260,11 @@ namespace Mapsui48.Client
         public double CurrentZoom { get; private set; }
         private MapOverlayUI _overlayUI;
 
+        private readonly TaskCompletionSource<bool> _readyTcs = new TaskCompletionSource<bool>();
+        public Task WhenReadyAsync() => _readyTcs.Task;
+        public bool IsHostReady { get; private set; }
+        public event EventHandler HostReady;
+
         protected override async void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
@@ -246,9 +278,14 @@ namespace Mapsui48.Client
                     
                     _overlayUI = new MapOverlayUI(this);
                     _overlayUI.AttachEvents();
+
+                    IsHostReady = true;
+                    _readyTcs.TrySetResult(true);
+                    HostReady?.Invoke(this, EventArgs.Empty);
                 }
                 catch (Exception ex)
                 {
+                    _readyTcs.TrySetException(ex);
                     MessageBox.Show("Failed to initialize Map Host: " + ex.Message);
                 }
             }
@@ -277,48 +314,79 @@ namespace Mapsui48.Client
             base.Dispose(disposing);
         }
 
-        // Delegate API methods to the client
-        public Task NavigateToAsync(double lat, double lon, double? zoom = null, int? durationMs = null)
-            => _client.NavigateToAsync(lat, lon, zoom, durationMs);
+        // Delegate API methods to the client, automatically ensuring the Host is ready
+        public async Task NavigateToAsync(double lat, double lon, double? zoom = null, int? durationMs = null)
+        {
+            await WhenReadyAsync();
+            await _client.NavigateToAsync(lat, lon, zoom, durationMs);
+        }
 
-        public Task FlyToAsync(double lat, double lon, double? zoom = null, int? durationMs = null)
-            => _client.FlyToAsync(lat, lon, zoom, durationMs);
+        public async Task FlyToAsync(double lat, double lon, double? zoom = null, int? durationMs = null)
+        {
+            await WhenReadyAsync();
+            await _client.FlyToAsync(lat, lon, zoom, durationMs);
+        }
 
-        public Task SetZoomAsync(double zoomLevel, int? durationMs = null)
-            => _client.SetZoomAsync(zoomLevel, durationMs);
+        public async Task SetZoomAsync(double zoomLevel, int? durationMs = null)
+        {
+            await WhenReadyAsync();
+            await _client.SetZoomAsync(zoomLevel, durationMs);
+        }
 
-        public Task GoHomeAsync(int? durationMs = null)
-            => _client.GoHomeAsync(durationMs);
+        public async Task GoHomeAsync(int? durationMs = null)
+        {
+            await WhenReadyAsync();
+            await _client.GoHomeAsync(durationMs);
+        }
 
         public async Task ChangeOnlineProviderAsync(string onlineUrl)
         {
             this.OnlineUrl = onlineUrl;
-            if (_client != null && _isLoaded)
+            if (_client != null)
             {
                 try
                 {
+                    await WhenReadyAsync();
                     await _client.SetTileSourceAsync(this.MBTilesPath, this.OnlineUrl, this.CachePath);
                 }
                 catch { }
             }
         }
 
-        public Task LoadVectorTileAsync(string mbTilesPath)
-            => _client.LoadVectorTileAsync(mbTilesPath);
+        public async Task LoadVectorTileAsync(string mbTilesPath)
+        {
+            await WhenReadyAsync();
+            await _client.LoadVectorTileAsync(mbTilesPath);
+        }
 
-        public Task<string> AddPolygonAsync(string layer, double[][] coordinates, string fillColor = "#800000FF", string outlineColor = "#FF0000FF", double outlineWidth = 2)
-            => _client.AddPolygonAsync(layer, coordinates, fillColor, outlineColor, outlineWidth);
+        public async Task<string> AddPolygonAsync(string layer, double[][] coordinates, string fillColor = "#800000FF", string outlineColor = "#FF0000FF", double outlineWidth = 2)
+        {
+            await WhenReadyAsync();
+            return await _client.AddPolygonAsync(layer, coordinates, fillColor, outlineColor, outlineWidth);
+        }
 
-        public Task<string> AddPointAsync(string layer, double lat, double lon, string label = null, string color = "#FFFF0000", double scale = 1.0)
-            => _client.AddPointAsync(layer, lat, lon, label, color, scale);
+        public async Task<string> AddPointAsync(string layer, double lat, double lon, string label = null, string color = "#FFFF0000", double scale = 1.0)
+        {
+            await WhenReadyAsync();
+            return await _client.AddPointAsync(layer, lat, lon, label, color, scale);
+        }
 
-        public Task<string> AddLineAsync(string layer, double[][] coordinates, string color = "#FF0000FF", double width = 2)
-            => _client.AddLineAsync(layer, coordinates, color, width);
+        public async Task<string> AddLineAsync(string layer, double[][] coordinates, string color = "#FF0000FF", double width = 2)
+        {
+            await WhenReadyAsync();
+            return await _client.AddLineAsync(layer, coordinates, color, width);
+        }
 
-        public Task RemoveFeatureAsync(string layer, string featureId)
-            => _client.RemoveFeatureAsync(layer, featureId);
+        public async Task RemoveFeatureAsync(string layer, string featureId)
+        {
+            await WhenReadyAsync();
+            await _client.RemoveFeatureAsync(layer, featureId);
+        }
 
-        public Task ClearLayerAsync(string layer)
-            => _client.ClearLayerAsync(layer);
+        public async Task ClearLayerAsync(string layer)
+        {
+            await WhenReadyAsync();
+            await _client.ClearLayerAsync(layer);
+        }
     }
 }

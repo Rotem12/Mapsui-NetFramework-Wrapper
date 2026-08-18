@@ -127,7 +127,17 @@ namespace Mapsui48.Client
         protected override void OnMouseClick(MouseEventArgs e)
         {
             base.OnMouseClick(e);
-            if (_hoverIndex == 0) _parentPanel.GoHomeAsync(1500);
+            if (_hoverIndex == 0)
+            {
+                if (_parentPanel.CustomHomeAction != null)
+                {
+                    _ = _parentPanel.CustomHomeAction();
+                }
+                else
+                {
+                    _parentPanel.GoHomeAsync(1500);
+                }
+            }
             else if (_hoverIndex == 1) _parentPanel.SetZoomAsync(_parentPanel.CurrentZoom + 1, 500);
             else if (_hoverIndex == 2) _parentPanel.SetZoomAsync(Math.Max(0, _parentPanel.CurrentZoom - 1), 500);
         }

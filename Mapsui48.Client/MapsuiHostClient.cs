@@ -16,6 +16,7 @@ namespace Mapsui48.Client
         public event EventHandler<FeatureClickedEvent> FeatureClicked;
         public event EventHandler<ViewportChangedEvent> ViewportChanged;
         public event EventHandler<AreaSelectedEvent> AreaSelected;
+        public event EventHandler<MapPointerMovedEvent> PointerMoved;
 
         public MapsuiHostClient()
         {
@@ -59,6 +60,8 @@ namespace Mapsui48.Client
                 ViewportChanged?.Invoke(this, vce);
             else if (evt is AreaSelectedEvent ase)
                 AreaSelected?.Invoke(this, ase);
+            else if (evt is MapPointerMovedEvent pme)
+                PointerMoved?.Invoke(this, pme);
         }
 
         public async Task NavigateToAsync(double lat, double lon, double? zoom = null, int? durationMs = null)
