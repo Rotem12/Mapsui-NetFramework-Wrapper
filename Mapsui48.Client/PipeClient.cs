@@ -73,6 +73,10 @@ namespace Mapsui48.Client
                                     evt = JsonSerializer.Deserialize<FeatureClickedEvent>(json);
                                 else if (eventType == "ViewportChanged")
                                     evt = JsonSerializer.Deserialize<ViewportChangedEvent>(json);
+                                else if (eventType == "AreaSelected")
+                                    evt = JsonSerializer.Deserialize<AreaSelectedEvent>(json);
+                                else if (eventType == "MapPointerMoved")
+                                    evt = JsonSerializer.Deserialize<MapPointerMovedEvent>(json);
 
                                 if (evt != null)
                                     OnEventReceived?.Invoke(evt);

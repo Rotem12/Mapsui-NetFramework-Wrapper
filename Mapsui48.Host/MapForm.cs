@@ -8,7 +8,7 @@ using System.Drawing;
 
 namespace Mapsui48.Host
 {
-    public partial class MapForm : Form, IMessageFilter
+    public partial class MapForm : Form
     {
         public MapControl MapControl { get; private set; }
         private readonly MapService _mapService;
@@ -53,8 +53,116 @@ namespace Mapsui48.Host
             {
                 this.Controls.Add(MapControl);
             }
+            
+            // Directly hook mouse events to MapControl and all child controls (like OpenGL view)
+            HookControlEvents(MapControl);
+
             // Now that we are reparented, make the form visible
             this.Visible = true;
+        }
+
+        private void HookControlEvents(Control ctrl)
+        {
+            ctrl.MouseMove -= OnControlMouseMove;
+            ctrl.MouseMove += OnControlMouseMove;
+            ctrl.MouseDown -= OnControlMouseDown;
+            ctrl.MouseDown += OnControlMouseDown;
+            ctrl.MouseUp -= OnControlMouseUp;
+            ctrl.MouseUp += OnControlMouseUp;
+            ctrl.ControlAdded += (s, e) => { if (e.Control != null) HookControlEvents(e.Control); };
+
+            foreach (Control child in ctrl.Controls)
+            {
+                HookControlEvents(child);
+            }
+        }
+
+        private void OnControlMouseDown(object? sender, MouseEventArgs e)
+        {
+            Point clientPoint = (sender == MapControl) ? e.Location : MapControl.PointToClient(((Control)sender!).PointToScreen(e.Location));
+            if (e.Button == MouseButtons.Right)
+            {
+                _dragStartPoint = clientPoint;
+                _isRightDragging = true;
+            }
+            else if (e.Button == MouseButtons.Left && Control.ModifierKeys.HasFlag(Keys.Shift))
+            {
+                _dragStartPoint = clientPoint;
+                _isShiftLeftDragging = true;
+            }
+        }
+
+        private void OnControlMouseMove(object? sender, MouseEventArgs e)
+        {
+            Point clientPoint = (sender == MapControl) ? e.Location : MapControl.PointToClient(((Control)sender!).PointToScreen(e.Location));
+            if (_isRightDragging || _isShiftLeftDragging)
+            {
+                int dx = Math.Abs(clientPoint.X - _dragStartPoint.X);
+                int dy = Math.Abs(clientPoint.Y - _dragStartPoint.Y);
+                if (dx > 6 || dy > 6)
+                {
+                    UpdateSelectionPolygon(_dragStartPoint, clientPoint);
+                }
+            }
+            else
+            {
+                long now = Environment.TickCount64;
+                if (now - _lastHoverTick >= 35)
+                {
+                    _lastHoverTick = now;
+                    var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPoint.X, clientPoint.Y);
+                    var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
+
+                    SendEvent(new Protocol.MapPointerMovedEvent
+                    {
+                        Latitude = lat,
+                        Longitude = lon,
+                        ScreenX = clientPoint.X,
+                        ScreenY = clientPoint.Y
+                    });
+                }
+            }
+        }
+
+        private void OnControlMouseUp(object? sender, MouseEventArgs e)
+        {
+            Point clientPoint = (sender == MapControl) ? e.Location : MapControl.PointToClient(((Control)sender!).PointToScreen(e.Location));
+            if (_isRightDragging)
+            {
+                _isRightDragging = false;
+                int dx = Math.Abs(clientPoint.X - _dragStartPoint.X);
+                int dy = Math.Abs(clientPoint.Y - _dragStartPoint.Y);
+
+                if (dx > 6 || dy > 6)
+                {
+                    FinishAreaSelection(_dragStartPoint, clientPoint);
+                }
+                else
+                {
+                    var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPoint.X, clientPoint.Y);
+                    var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
+
+                    SendEvent(new Protocol.MapClickedEvent
+                    {
+                        Latitude = lat,
+                        Longitude = lon,
+                        ScreenX = clientPoint.X,
+                        ScreenY = clientPoint.Y,
+                        Button = "Right"
+                    });
+                }
+            }
+            else if (_isShiftLeftDragging)
+            {
+                _isShiftLeftDragging = false;
+                int dx = Math.Abs(clientPoint.X - _dragStartPoint.X);
+                int dy = Math.Abs(clientPoint.Y - _dragStartPoint.Y);
+
+                if (dx > 6 || dy > 6)
+                {
+                    FinishAreaSelection(_dragStartPoint, clientPoint);
+                }
+            }
         }
 
         protected override void SetVisibleCore(bool value)
@@ -86,135 +194,10 @@ namespace Mapsui48.Host
             _pipeServer?.SendEvent(evt);
         }
 
-        private const int WM_LBUTTONDOWN = 0x0201;
-        private const int WM_LBUTTONUP = 0x0202;
-        private const int WM_RBUTTONDOWN = 0x0204;
-        private const int WM_RBUTTONUP = 0x0205;
-        private const int WM_MOUSEMOVE = 0x0200;
-
         private bool _isRightDragging;
         private bool _isShiftLeftDragging;
         private Point _dragStartPoint;
         private long _lastHoverTick = 0;
-
-        // Automatically add message filter so we can catch hover and selection
-        protected override void OnLoad(EventArgs e)
-        {
-            base.OnLoad(e);
-            Application.AddMessageFilter(this);
-        }
-
-        public bool PreFilterMessage(ref Message m)
-        {
-            if (m.Msg == WM_RBUTTONDOWN)
-            {
-                var screenPoint = Control.MousePosition;
-                var clientPoint = MapControl.PointToClient(screenPoint);
-                if (MapControl.ClientRectangle.Contains(clientPoint))
-                {
-                    _dragStartPoint = clientPoint;
-                    _isRightDragging = true;
-                    return false;
-                }
-            }
-            else if (m.Msg == WM_LBUTTONDOWN && Control.ModifierKeys.HasFlag(Keys.Shift))
-            {
-                var screenPoint = Control.MousePosition;
-                var clientPoint = MapControl.PointToClient(screenPoint);
-                if (MapControl.ClientRectangle.Contains(clientPoint))
-                {
-                    _dragStartPoint = clientPoint;
-                    _isShiftLeftDragging = true;
-                    return true; // Consume event to prevent default map panning
-                }
-            }
-            else if (m.Msg == WM_MOUSEMOVE)
-            {
-                var screenPoint = Control.MousePosition;
-                var clientPoint = MapControl.PointToClient(screenPoint);
-                if (MapControl.ClientRectangle.Contains(clientPoint))
-                {
-                    if (_isRightDragging || _isShiftLeftDragging)
-                    {
-                        int dx = Math.Abs(clientPoint.X - _dragStartPoint.X);
-                        int dy = Math.Abs(clientPoint.Y - _dragStartPoint.Y);
-                        if (dx > 6 || dy > 6)
-                        {
-                            UpdateSelectionPolygon(_dragStartPoint, clientPoint);
-                            return true;
-                        }
-                    }
-                    else
-                    {
-                        // Throttled mouse hover event for floating tooltip (every 40ms)
-                        long now = Environment.TickCount64;
-                        if (now - _lastHoverTick >= 40)
-                        {
-                            _lastHoverTick = now;
-                            var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPoint.X, clientPoint.Y);
-                            var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
-
-                            SendEvent(new Protocol.MapPointerMovedEvent
-                            {
-                                Latitude = lat,
-                                Longitude = lon,
-                                ScreenX = clientPoint.X,
-                                ScreenY = clientPoint.Y
-                            });
-                        }
-                    }
-                }
-            }
-            else if (m.Msg == WM_RBUTTONUP)
-            {
-                if (_isRightDragging)
-                {
-                    _isRightDragging = false;
-                    var screenPoint = Control.MousePosition;
-                    var clientPoint = MapControl.PointToClient(screenPoint);
-                    int dx = Math.Abs(clientPoint.X - _dragStartPoint.X);
-                    int dy = Math.Abs(clientPoint.Y - _dragStartPoint.Y);
-
-                    if (dx > 6 || dy > 6)
-                    {
-                        // Finish Area Selection
-                        FinishAreaSelection(_dragStartPoint, clientPoint);
-                        return true;
-                    }
-                    else
-                    {
-                        // Standard Right-Click
-                        var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPoint.X, clientPoint.Y);
-                        var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
-
-                        SendEvent(new Protocol.MapClickedEvent
-                        {
-                            Latitude = lat,
-                            Longitude = lon,
-                            ScreenX = clientPoint.X,
-                            ScreenY = clientPoint.Y,
-                            Button = "Right"
-                        });
-                    }
-                }
-            }
-            else if (m.Msg == WM_LBUTTONUP && _isShiftLeftDragging)
-            {
-                _isShiftLeftDragging = false;
-                var screenPoint = Control.MousePosition;
-                var clientPoint = MapControl.PointToClient(screenPoint);
-                int dx = Math.Abs(clientPoint.X - _dragStartPoint.X);
-                int dy = Math.Abs(clientPoint.Y - _dragStartPoint.Y);
-
-                if (dx > 6 || dy > 6)
-                {
-                    FinishAreaSelection(_dragStartPoint, clientPoint);
-                    return true;
-                }
-            }
-
-            return false;
-        }
 
         private void UpdateSelectionPolygon(Point p1, Point p2)
         {

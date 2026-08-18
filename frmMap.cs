@@ -255,14 +255,23 @@ namespace PelcoControlNM
             if (!string.IsNullOrEmpty(pos))
             {
                 string[] p = pos.Split(',');
-                ddLatPos = double.Parse(p[0]);
-                ddLonPos = double.Parse(p[1]);
+                if (p.Length >= 2 && double.TryParse(p[0], out double parsedLat) && double.TryParse(p[1], out double parsedLon) && (Math.Abs(parsedLat) > 0.001 || Math.Abs(parsedLon) > 0.001))
+                {
+                    ddLatPos = parsedLat;
+                    ddLonPos = parsedLon;
+                }
+                else
+                {
+                    showDefault = true;
+                    ddLatPos = (parent != null && Math.Abs(parent.Latitude) > 0.001) ? parent.Latitude : 31.5;
+                    ddLonPos = (parent != null && Math.Abs(parent.Longitude) > 0.001) ? parent.Longitude : 34.75;
+                }
             }
             else
             {
                 showDefault = true;
-                ddLatPos = 31.5;
-                ddLonPos = 34.75;
+                ddLatPos = (parent != null && Math.Abs(parent.Latitude) > 0.001) ? parent.Latitude : 31.5;
+                ddLonPos = (parent != null && Math.Abs(parent.Longitude) > 0.001) ? parent.Longitude : 34.75;
             }
 
             double zoom = xml.Get("Map/Zoom", 0d);
@@ -274,9 +283,9 @@ namespace PelcoControlNM
             zoom = MathE.Clamp(zoom, 2, 18);
             _currentZoom = zoom;
 
-            // Automatically awaits host readiness internally, ensuring the map is centered on opening
-            await SetPosition(center: true);
-            await map.SetZoomAsync(zoom);
+            // Atomically set both position and zoom level directly upon startup
+            await map.NavigateToAsync(ddLatPos, ddLonPos, zoom);
+            await SetPosition(center: false);
         }
 
         private void SaveSettings()
@@ -298,8 +307,14 @@ namespace PelcoControlNM
                 xml.Set("Map/Height", RestoreBounds.Height);
             }
 
-            xml.Set("Map/Position", $"{_currentCenterLat},{_currentCenterLon}");
-            xml.Set("Map/Zoom", _currentZoom);
+            if (Math.Abs(_currentCenterLat) > 0.001 || Math.Abs(_currentCenterLon) > 0.001)
+            {
+                xml.Set("Map/Position", $"{_currentCenterLat},{_currentCenterLon}");
+            }
+            if (_currentZoom > 1)
+            {
+                xml.Set("Map/Zoom", _currentZoom);
+            }
             xml.Save();
         }
 
@@ -325,7 +340,7 @@ namespace PelcoControlNM
 
         public async Task Center()
         {
-            await map.FlyToAsync(ddLatPos, ddLonPos, _currentZoom, durationMs: 600);
+            await map.NavigateToAsync(ddLatPos, ddLonPos, _currentZoom);
         }
 
         // ==========================================
