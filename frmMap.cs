@@ -116,6 +116,7 @@ namespace PelcoControlNM
 
             // Subscribe to Mapsui events
             map.PointerMoved += MapPanel_PointerMoved;
+            map.PointerLeft += (s, e) => { if (!IsDisposed) BeginInvoke((MethodInvoker)delegate { _floatingTooltip?.Hide(); }); };
             map.AreaSelected += MapPanel_AreaSelected;
             map.MapClicked += MapPanel_MapClicked;
             map.FeatureClicked += MapPanel_FeatureClicked;

@@ -22,6 +22,7 @@ namespace Mapsui48.Client
         public event EventHandler<ViewportChangedEvent> ViewportChanged;
         public event EventHandler<AreaSelectedEvent> AreaSelected;
         public event EventHandler<MapPointerMovedEvent> PointerMoved;
+        public event EventHandler<MapPointerLeftEvent> PointerLeft;
         
         public event Func<BoundingBox, int, int, System.Threading.CancellationToken, Task> OnDownloadStarted;
 
@@ -112,6 +113,22 @@ namespace Mapsui48.Client
                     catch { }
                 }
                 PointerMoved?.Invoke(this, e);
+            };
+            _client.PointerLeft += (s, e) => 
+            {
+                if (IsHandleCreated && !IsDisposed)
+                {
+                    try
+                    {
+                        BeginInvoke((MethodInvoker)delegate
+                        {
+                            PointerLeft?.Invoke(this, e);
+                        });
+                        return;
+                    }
+                    catch { }
+                }
+                PointerLeft?.Invoke(this, e);
             };
             _client.AreaSelected += (s, e) => 
             {

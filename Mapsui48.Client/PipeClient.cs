@@ -79,6 +79,8 @@ namespace Mapsui48.Client
                                     evt = JsonSerializer.Deserialize<MapPointerMovedEvent>(json);
                                 else if (eventType == "MapDoubleClicked")
                                     evt = JsonSerializer.Deserialize<MapDoubleClickedEvent>(json);
+                                else if (eventType == "MapPointerLeft")
+                                    evt = JsonSerializer.Deserialize<MapPointerLeftEvent>(json);
 
                                 if (evt != null)
                                     OnEventReceived?.Invoke(evt);

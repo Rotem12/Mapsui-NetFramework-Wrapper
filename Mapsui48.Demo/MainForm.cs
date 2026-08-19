@@ -35,8 +35,9 @@ namespace Mapsui48.Demo
             _mapPanel.FeatureClicked += MapPanel_FeatureClicked;
             _mapPanel.ViewportChanged += MapPanel_ViewportChanged;
             
-            // Hook live PointerMoved event for the Custom Tooltip Test
+            // Hook live PointerMoved and PointerLeft events for the Custom Tooltip Test
             _mapPanel.PointerMoved += MapPanel_PointerMoved;
+            _mapPanel.PointerLeft += (s, e) => { if (!IsDisposed) Invoke((MethodInvoker)delegate { _tooltipForm?.Hide(); }); };
 
             panelMapContainer.Controls.Add(_mapPanel);
 

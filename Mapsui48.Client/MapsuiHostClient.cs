@@ -18,6 +18,7 @@ namespace Mapsui48.Client
         public event EventHandler<ViewportChangedEvent> ViewportChanged;
         public event EventHandler<AreaSelectedEvent> AreaSelected;
         public event EventHandler<MapPointerMovedEvent> PointerMoved;
+        public event EventHandler<MapPointerLeftEvent> PointerLeft;
 
         public MapsuiHostClient()
         {
@@ -65,6 +66,8 @@ namespace Mapsui48.Client
                 AreaSelected?.Invoke(this, ase);
             else if (evt is MapPointerMovedEvent pme)
                 PointerMoved?.Invoke(this, pme);
+            else if (evt is MapPointerLeftEvent ple)
+                PointerLeft?.Invoke(this, ple);
         }
 
 

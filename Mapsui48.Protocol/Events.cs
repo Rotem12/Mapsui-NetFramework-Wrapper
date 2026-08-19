@@ -90,5 +90,13 @@ namespace Mapsui48.Protocol
             EventType = "MapDoubleClicked";
         }
     }
+
+    public class MapPointerLeftEvent : MapEvent
+    {
+        public MapPointerLeftEvent()
+        {
+            EventType = "MapPointerLeft";
+        }
+    }
 }
 

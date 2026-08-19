@@ -48,8 +48,6 @@ namespace Mapsui48.Host
         
         private bool _isAttached = false;
         
-        private System.Windows.Forms.Timer? _mouseTimer;
-        private Point _lastScreenPoint;
         private Point _dragStartClientPoint;
         private bool _isDraggingSelection = false;
         private bool _wasShiftLeftDown = false;
@@ -63,14 +61,6 @@ namespace Mapsui48.Host
             if (!this.Controls.Contains(MapControl))
             {
                 this.Controls.Add(MapControl);
-            }
-            
-            // Start responsive 30 FPS cursor tracking timer for hovering
-            if (_mouseTimer == null)
-            {
-                _mouseTimer = new System.Windows.Forms.Timer { Interval = 33 };
-                _mouseTimer.Tick += MouseTimer_Tick;
-                _mouseTimer.Start();
             }
 
             // Now that we are reparented, make the form visible
@@ -129,10 +119,28 @@ namespace Mapsui48.Host
                     UpdateSelectionPolygon(_dragStartClientPoint, clientPt);
                 }
             }
+            else
+            {
+                // Pointer Move (Hover) - throttled to ~30ms to prevent IPC pipe flooding
+                var now = DateTime.UtcNow;
+                if ((now - _lastPointerEventTime).TotalMilliseconds >= 30)
+                {
+                    _lastPointerEventTime = now;
+                    var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPt.X, clientPt.Y);
+                    var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
+
+                    SendEvent(new Protocol.MapPointerMovedEvent
+                    {
+                        Latitude = lat,
+                        Longitude = lon,
+                        ScreenX = clientPt.X,
+                        ScreenY = clientPt.Y
+                    });
+                }
+            }
         }
 
         private DateTime _lastRightClickEventSent = DateTime.MinValue;
-        private bool _wasTimerRightDown = false;
 
         private void DispatchRightClick(Point clientPt)
         {
@@ -182,62 +190,6 @@ namespace Mapsui48.Host
                         _isDraggingSelection = false;
                         FinishAreaSelection(_dragStartClientPoint, clientPt);
                     }
-                }
-            }
-        }
-
-        private void MouseTimer_Tick(object? sender, EventArgs e)
-        {
-            if (!this.Visible || MapControl == null || !MapControl.IsHandleCreated) return;
-
-            Point screenPt = Control.MousePosition;
-            Point clientPt = MapControl.PointToClient(screenPt);
-            bool isInside = MapControl.ClientRectangle.Contains(clientPt);
-            bool isRightDown = (Control.MouseButtons & MouseButtons.Right) != 0;
-
-            // Dual-path Right Click detection (handles cases where child controls swallow Win32 messages)
-            if (isInside)
-            {
-                if (_wasTimerRightDown && !isRightDown) // Right button released
-                {
-                    _wasTimerRightDown = false;
-                    if (!_isDraggingSelection)
-                    {
-                        DispatchRightClick(clientPt);
-                    }
-                }
-                else if (!_wasTimerRightDown && isRightDown)
-                {
-                    _wasTimerRightDown = true;
-                    MapService.LastRightClickTime = DateTime.UtcNow;
-                }
-            }
-            else
-            {
-                _wasTimerRightDown = false;
-            }
-
-            // Pointer Movement (Hover) - throttled to ~15-20 Hz to avoid IPC flood
-            if (isInside && !_isDraggingSelection)
-            {
-                int dx = Math.Abs(screenPt.X - _lastScreenPoint.X);
-                int dy = Math.Abs(screenPt.Y - _lastScreenPoint.Y);
-                var now = DateTime.UtcNow;
-
-                if ((dx >= 2 || dy >= 2) && (now - _lastPointerEventTime).TotalMilliseconds >= 50)
-                {
-                    _lastPointerEventTime = now;
-                    _lastScreenPoint = screenPt;
-                    var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPt.X, clientPt.Y);
-                    var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
-
-                    SendEvent(new Protocol.MapPointerMovedEvent
-                    {
-                        Latitude = lat,
-                        Longitude = lon,
-                        ScreenX = clientPt.X,
-                        ScreenY = clientPt.Y
-                    });
                 }
             }
         }
@@ -322,6 +274,11 @@ namespace Mapsui48.Host
                 MaxLon = maxLon
             });
         }
+
+        public void OnRawMouseLeave()
+        {
+            SendEvent(new Protocol.MapPointerLeftEvent());
+        }
     }
 
     internal class GlobalMouseMessageFilter : IMessageFilter
@@ -331,8 +288,24 @@ namespace Mapsui48.Host
         private const int WM_LBUTTONDOWN = 0x0201;
         private const int WM_LBUTTONUP = 0x0202;
         private const int WM_MOUSEMOVE = 0x0200;
+        private const int WM_MOUSELEAVE = 0x02A3;
+
+        private const uint TME_LEAVE = 0x00000002;
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct TRACKMOUSEEVENT
+        {
+            public uint cbSize;
+            public uint dwFlags;
+            public IntPtr hwndTrack;
+            public uint dwHoverTime;
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool TrackMouseEvent(ref TRACKMOUSEEVENT lpEventTrack);
 
         private readonly MapForm _form;
+        private bool _isTrackingLeave = false;
 
         public GlobalMouseMessageFilter(MapForm form)
         {
@@ -356,7 +329,23 @@ namespace Mapsui48.Host
                     _form.OnRawMouseUp(MouseButtons.Left);
                     break;
                 case WM_MOUSEMOVE:
+                    if (!_isTrackingLeave)
+                    {
+                        _isTrackingLeave = true;
+                        var tme = new TRACKMOUSEEVENT
+                        {
+                            cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<TRACKMOUSEEVENT>(),
+                            dwFlags = TME_LEAVE,
+                            hwndTrack = m.HWnd,
+                            dwHoverTime = 0
+                        };
+                        TrackMouseEvent(ref tme);
+                    }
                     _form.OnRawMouseMove();
+                    break;
+                case WM_MOUSELEAVE:
+                    _isTrackingLeave = false;
+                    _form.OnRawMouseLeave();
                     break;
             }
             return false;
