@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\Mapsui48.Protocol\Mapsui48.Protocol.csproj" />
@@ -13,6 +13,10 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\countries.geojson" />
+    <EmbeddedResource Include="Assets\camera.svg" />
+    <EmbeddedResource Include="Assets\camera_cctv.svg" />
+    <EmbeddedResource Include="Assets\camera_dome.svg" />
+    <EmbeddedResource Include="Assets\camera_sensor.svg" />
   </ItemGroup>
 
   <PropertyGroup>

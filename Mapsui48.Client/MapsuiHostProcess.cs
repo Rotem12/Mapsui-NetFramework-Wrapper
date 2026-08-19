@@ -25,16 +25,11 @@ namespace Mapsui48.Client
                 if (!File.Exists(hostExePath))
                     hostExePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Mapsui48.Host.exe");
 
-                // Fallback 2: Project development build directories
+                // Fallback 2: Relative to demo build directory
                 if (!File.Exists(hostExePath))
                 {
-                    string p1 = @"E:\Projects\GitHub\Mapsui-NetFramework-Wrapper\Mapsui48.Demo\bin\Debug\Host\Mapsui48.Host.exe";
-                    if (File.Exists(p1)) hostExePath = p1;
-                }
-                if (!File.Exists(hostExePath))
-                {
-                    string p2 = @"E:\Projects\GitHub\Mapsui48\Mapsui48.Demo\bin\Debug\Host\Mapsui48.Host.exe";
-                    if (File.Exists(p2)) hostExePath = p2;
+                    string rel = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "Mapsui48.Demo", "bin", "Debug", "Host", "Mapsui48.Host.exe");
+                    if (File.Exists(rel)) hostExePath = Path.GetFullPath(rel);
                 }
             }
 

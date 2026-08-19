@@ -77,4 +77,18 @@ namespace Mapsui48.Protocol
             EventType = "MapPointerMoved";
         }
     }
+
+    public class MapDoubleClickedEvent : MapEvent
+    {
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+        public double ScreenX { get; set; }
+        public double ScreenY { get; set; }
+
+        public MapDoubleClickedEvent()
+        {
+            EventType = "MapDoubleClicked";
+        }
+    }
 }
+

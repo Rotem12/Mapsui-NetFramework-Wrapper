@@ -17,6 +17,7 @@ namespace Mapsui48.Client
         public string HostExePath { get; set; }
 
         public event EventHandler<MapClickedEvent> MapClicked;
+        public event EventHandler<MapDoubleClickedEvent> MapDoubleClicked;
         public event EventHandler<FeatureClickedEvent> FeatureClicked;
         public event EventHandler<ViewportChangedEvent> ViewportChanged;
         public event EventHandler<AreaSelectedEvent> AreaSelected;
@@ -35,22 +36,59 @@ namespace Mapsui48.Client
 
         public Func<Task> CustomHomeAction { get; set; }
 
+        public MapContextMenuOverlay ContextMenuOverlay { get; }
+        public bool EnableContextMenuOverlay { get; set; } = true;
+
+        public int ContextMenuButtonSize
+        {
+            get => ContextMenuOverlay?.ButtonSize ?? 42;
+            set { if (ContextMenuOverlay != null) ContextMenuOverlay.ButtonSize = value; }
+        }
+
+        public float ContextMenuIconSizeFactor
+        {
+            get => ContextMenuOverlay?.IconSizeFactor ?? 1.0f;
+            set { if (ContextMenuOverlay != null) ContextMenuOverlay.IconSizeFactor = value; }
+        }
+
         public MapHostPanel()
         {
+            ContextMenuOverlay = new MapContextMenuOverlay(this);
             _client = new MapsuiHostClient();
             _client.MapClicked += (s, e) => 
             {
                 if (IsHandleCreated && !IsDisposed)
                 {
-                    Invoke((MethodInvoker)delegate
+                    try
                     {
-                        if (e.Button == "Right" && this.ContextMenuStrip != null)
+                        BeginInvoke((MethodInvoker)delegate
                         {
-                            this.ContextMenuStrip.Show(this, new System.Drawing.Point((int)e.ScreenX, (int)e.ScreenY));
-                        }
-                    });
+                            if (e.Button == "Right")
+                            {
+                                if (EnableContextMenuOverlay && ContextMenuOverlay != null && ContextMenuOverlay.Items.Count > 0)
+                                {
+                                    var screenPt = PointToScreen(new System.Drawing.Point((int)e.ScreenX, (int)e.ScreenY));
+                                    ContextMenuOverlay.ShowAt(screenPt, e.Latitude, e.Longitude);
+                                }
+                                else if (this.ContextMenuStrip != null)
+                                {
+                                    this.ContextMenuStrip.Show(this, new System.Drawing.Point((int)e.ScreenX, (int)e.ScreenY));
+                                }
+                            }
+                            else if (e.Button == "Left")
+                            {
+                                ContextMenuOverlay?.HideMenu();
+                            }
+                        });
+                    }
+                    catch { }
                 }
                 MapClicked?.Invoke(this, e);
+            };
+            _client.MapDoubleClicked += (s, e) => 
+            {
+                ContextMenuOverlay?.HideMenu();
+                MapDoubleClicked?.Invoke(this, e);
             };
             _client.FeatureClicked += (s, e) => FeatureClicked?.Invoke(this, e);
             _client.ViewportChanged += (s, e) => 
@@ -58,6 +96,7 @@ namespace Mapsui48.Client
                 CurrentZoom = e.ZoomLevel;
                 ViewportChanged?.Invoke(this, e);
             };
+
             _client.PointerMoved += (s, e) => 
             {
                 if (IsHandleCreated && !IsDisposed)
@@ -330,6 +369,7 @@ namespace Mapsui48.Client
             {
                 _client?.Dispose();
                 _overlayUI?.Dispose();
+                ContextMenuOverlay?.Dispose();
             }
             base.Dispose(disposing);
         }
@@ -385,10 +425,32 @@ namespace Mapsui48.Client
             return await _client.AddPolygonAsync(layer, coordinates, fillColor, outlineColor, outlineWidth);
         }
 
-        public async Task<string> AddPointAsync(string layer, double lat, double lon, string label = null, string color = "#FFFF0000", double scale = 1.0)
+        public async Task<string> AddCircleAsync(string layer, double centerLat, double centerLon, double radiusMeters, string fillColor = null, string outlineColor = "#3B82F6", double outlineWidth = 2.0, double[] dashArray = null, int segments = 64, string featureId = null)
         {
             await WhenReadyAsync();
-            return await _client.AddPointAsync(layer, lat, lon, label, color, scale);
+            return await _client.AddCircleAsync(layer, centerLat, centerLon, radiusMeters, fillColor, outlineColor, outlineWidth, dashArray, segments, featureId);
+        }
+
+        public async Task<string> AddPointAsync(string layer, double lat, double lon, string label = null, string color = "#FFFF0000", double scale = 1.0, double? rotation = null, string iconType = null)
+
+        {
+            await WhenReadyAsync();
+            return await _client.AddPointAsync(layer, lat, lon, label, color, scale, rotation, iconType);
+        }
+
+        public async Task<string> AddMarkerAsync(string layer, double lat, double lon, string label = null, string iconType = "pin", string color = "#00E5FF", double scale = 1.0, double? rotation = null)
+        {
+            return await AddPointAsync(layer, lat, lon, label, color, scale, rotation, iconType);
+        }
+
+        public async Task<string> AddTargetAsync(double lat, double lon, string label = "Target", string iconType = "crosshair", string color = "#EF4444", double scale = 1.2, double? rotation = null)
+        {
+            return await AddPointAsync("Targets", lat, lon, label, color, scale, rotation, iconType);
+        }
+
+        public async Task<string> SetCameraMarkerAsync(double lat, double lon, string label = "Camera", string iconType = "camera_ptz", string color = "#00D4FF", double scale = 1.0, double? rotation = null)
+        {
+            return await AddPointAsync("Camera", lat, lon, label, color, scale, rotation, iconType);
         }
 
         public async Task<string> AddLineAsync(string layer, double[][] coordinates, string color = "#FF0000FF", double width = 2)
@@ -408,5 +470,199 @@ namespace Mapsui48.Client
             await WhenReadyAsync();
             await _client.ClearLayerAsync(layer);
         }
+
+        // ── Navigation & Camera Controls ─────────────────────────────
+
+        public async Task RotateToAsync(double heading, int? durationMs = null, string easing = null)
+        {
+            await WhenReadyAsync();
+            await _client.RotateToAsync(heading, durationMs, easing);
+        }
+
+        public async Task SetRotationLockAsync(bool locked)
+        {
+            await WhenReadyAsync();
+            await _client.SetRotationLockAsync(locked);
+        }
+
+        public async Task ZoomToBoxAsync(double minLat, double minLon, double maxLat, double maxLon, int? durationMs = null, string boxFit = "Fit")
+        {
+            await WhenReadyAsync();
+            await _client.ZoomToBoxAsync(minLat, minLon, maxLat, maxLon, durationMs, boxFit);
+        }
+
+        public async Task SetViewportBoundsAsync(double? minLat = null, double? minLon = null, double? maxLat = null, double? maxLon = null, double? minZoom = null, double? maxZoom = null)
+        {
+            await WhenReadyAsync();
+            await _client.SetViewportBoundsAsync(minLat, minLon, maxLat, maxLon, minZoom, maxZoom);
+        }
+
+        public async Task SetPanLockAsync(bool locked)
+        {
+            await WhenReadyAsync();
+            await _client.SetPanLockAsync(locked);
+        }
+
+        public async Task SetZoomLockAsync(bool locked)
+        {
+            await WhenReadyAsync();
+            await _client.SetZoomLockAsync(locked);
+        }
+
+        // ── Layer Management ─────────────────────────────────────────
+
+        public async Task SetLayerVisibilityAsync(string layer, bool visible)
+        {
+            await WhenReadyAsync();
+            await _client.SetLayerVisibilityAsync(layer, visible);
+        }
+
+        public async Task SetLayerOpacityAsync(string layer, double opacity)
+        {
+            await WhenReadyAsync();
+            await _client.SetLayerOpacityAsync(layer, opacity);
+        }
+
+        public async Task SetLayerScaleRangeAsync(string layer, double? minZoom = null, double? maxZoom = null)
+        {
+            await WhenReadyAsync();
+            await _client.SetLayerScaleRangeAsync(layer, minZoom, maxZoom);
+        }
+
+        public async Task RemoveLayerAsync(string layer)
+        {
+            await WhenReadyAsync();
+            await _client.RemoveLayerAsync(layer);
+        }
+
+        public async Task<System.Collections.Generic.List<LayerInfoDto>> GetLayersAsync()
+        {
+            await WhenReadyAsync();
+            return await _client.GetLayersAsync();
+        }
+
+        // ── Batch & Advanced Features ────────────────────────────────
+
+        public async Task<System.Collections.Generic.List<string>> AddFeaturesBatchAsync(string layer, System.Collections.Generic.IEnumerable<FeatureDto> features)
+        {
+            await WhenReadyAsync();
+            return await _client.AddFeaturesBatchAsync(layer, features);
+        }
+
+        public async Task UpdateFeatureAsync(string layer, string featureId, double? lat = null, double? lon = null, double? rotation = null, double? scale = null, string label = null)
+        {
+            await WhenReadyAsync();
+            await _client.UpdateFeatureAsync(layer, featureId, lat, lon, rotation, scale, label);
+        }
+
+        public async Task ShowCalloutAsync(string layer, string featureId, string title, string subtitle = null, bool enabled = true)
+        {
+            await WhenReadyAsync();
+            await _client.ShowCalloutAsync(layer, featureId, title, subtitle, enabled);
+        }
+
+        // ── Canvas HUD Widgets ───────────────────────────────────────
+
+        public async Task SetScaleBarWidgetAsync(bool enabled, string position = "BottomLeft", string mode = "Single")
+        {
+            await WhenReadyAsync();
+            await _client.SetScaleBarWidgetAsync(enabled, position, mode);
+        }
+
+        public async Task SetMouseCoordinatesWidgetAsync(bool enabled, string position = "BottomRight")
+        {
+            await WhenReadyAsync();
+            await _client.SetMouseCoordinatesWidgetAsync(enabled, position);
+        }
+
+        public async Task SetPerformanceWidgetAsync(bool enabled, string position = "TopRight")
+        {
+            await WhenReadyAsync();
+            await _client.SetPerformanceWidgetAsync(enabled, position);
+        }
+
+        public async Task SetZoomButtonsWidgetAsync(bool enabled, string position = "TopLeft")
+        {
+            await WhenReadyAsync();
+            await _client.SetZoomButtonsWidgetAsync(enabled, position);
+        }
+
+        public async Task SetRulerWidgetAsync(bool enabled)
+        {
+            await WhenReadyAsync();
+            await _client.SetRulerWidgetAsync(enabled);
+        }
+
+        // ── GIS Data Loaders & Formats ────────────────────────────────
+
+        public async Task LoadGeoJsonAsync(string geoJsonOrFilePath, string layerName = "GeoJsonLayer", string fillColor = "#403B82F6", string outlineColor = "#3B82F6", double outlineWidth = 2.0)
+        {
+            await WhenReadyAsync();
+            await _client.LoadGeoJsonAsync(geoJsonOrFilePath, layerName, fillColor, outlineColor, outlineWidth);
+        }
+
+        public async Task LoadShapefileAsync(string shapefilePath, string layerName = "ShapefileLayer", string fillColor = "#4010B981", string outlineColor = "#10B981", double outlineWidth = 2.0)
+        {
+            await WhenReadyAsync();
+            await _client.LoadShapefileAsync(shapefilePath, layerName, fillColor, outlineColor, outlineWidth);
+        }
+
+        public async Task AddWmsLayerAsync(string url, string layerName = "WmsLayer", string serviceLayerName = null, string crs = "EPSG:3857")
+        {
+            await WhenReadyAsync();
+            await _client.AddWmsLayerAsync(url, layerName, serviceLayerName, crs);
+        }
+
+        // ── Coordinate Translation & Spatial Queries ─────────────────
+
+        public async Task<CoordinateResultDto> ScreenToWorldAsync(double screenX, double screenY)
+        {
+            await WhenReadyAsync();
+            return await _client.ScreenToWorldAsync(screenX, screenY);
+        }
+
+        public async Task<CoordinateResultDto> WorldToScreenAsync(double lat, double lon)
+        {
+            await WhenReadyAsync();
+            return await _client.WorldToScreenAsync(lat, lon);
+        }
+
+        public async Task<BoundsResultDto> GetLayerBoundsAsync(string layerName)
+        {
+            await WhenReadyAsync();
+            return await _client.GetLayerBoundsAsync(layerName);
+        }
+
+        // ── Animated Glide Tracking ──────────────────────────────────
+
+        public async Task<string> AddAnimatedPointAsync(string layerName, double lat, double lon, int durationMs = 1000, string featureId = null, string label = null, string color = null, double scale = 1.0, double? rotation = null, string iconType = null)
+        {
+            await WhenReadyAsync();
+            return await _client.AddAnimatedPointAsync(layerName, lat, lon, durationMs, featureId, label, color, scale, rotation, iconType);
+        }
+
+        public async Task UpdateAnimatedPointAsync(string layerName, string featureId, double lat, double lon, int durationMs = 1000, double? rotation = null, double? scale = null, string label = null)
+        {
+            await WhenReadyAsync();
+            await _client.UpdateAnimatedPointAsync(layerName, featureId, lat, lon, durationMs, rotation, scale, label);
+        }
+
+        // ── Mouse & Pointer Event Controls ───────────────────────────
+
+        public async Task SetPointerMoveEventsAsync(bool enabled)
+        {
+            await WhenReadyAsync();
+            await _client.SetPointerMoveEventsAsync(enabled);
+        }
+
+        // ── Snapshot & Utilities ─────────────────────────────────────
+
+        public async Task<byte[]> GetSnapshotAsync(string format = "Png", int quality = 100)
+        {
+            await WhenReadyAsync();
+            return await _client.GetSnapshotAsync(format, quality);
+        }
     }
 }
+
+

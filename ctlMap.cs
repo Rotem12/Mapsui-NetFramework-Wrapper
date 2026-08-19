@@ -11,9 +11,22 @@ using Mapsui48.Protocol;
 
 namespace PelcoControlNM
 {
-    public partial class frmMap : Form
+    public partial class ctlMap : UserControl
     {
-        PelcoControl parent;
+        private PelcoControl parent;
+
+        public PelcoControl Pelco
+        {
+            get => parent;
+            set
+            {
+                parent = value;
+                if (loaded)
+                {
+                    _ = SetPosition(false);
+                }
+            }
+        }
 
         public double ddLat1 { get; set; }
         public double ddLon1 { get; set; }
@@ -72,13 +85,69 @@ namespace PelcoControlNM
         private const double R = 6371000; // Earth radius in meters
 
         private AreaSelectedEvent _selectedArea;
+        private Form _parentForm;
 
-        public frmMap(PelcoControl pelco)
+        public MapHostPanel MapHostPanel => map;
+        public MapHostPanel MapControl => map;
+
+        public ctlMap() : this(null)
+        {
+        }
+
+        public ctlMap(PelcoControl pelco)
         {
             InitializeComponent();
             parent = pelco;
             _floatingTooltip = new FloatingTooltipForm();
             initMap();
+        }
+
+        protected override void OnParentChanged(EventArgs e)
+        {
+            base.OnParentChanged(e);
+            HookParentForm();
+        }
+
+        private void HookParentForm()
+        {
+            if (_parentForm != null)
+            {
+                _parentForm.FormClosing -= ParentForm_FormClosing;
+                _parentForm.Deactivate -= ParentForm_Deactivate;
+                _parentForm = null;
+            }
+
+            var topForm = FindForm();
+            if (topForm != null)
+            {
+                _parentForm = topForm;
+                _parentForm.FormClosing += ParentForm_FormClosing;
+                _parentForm.Deactivate += ParentForm_Deactivate;
+            }
+        }
+
+        private void ParentForm_Deactivate(object sender, EventArgs e)
+        {
+            _floatingTooltip?.Hide();
+        }
+
+        private void ParentForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            if (cts != null && !cts.IsCancellationRequested)
+            {
+                try { cts.Cancel(); } catch { }
+            }
+
+            SaveSettings();
+        }
+
+        protected override void OnVisibleChanged(EventArgs e)
+        {
+            base.OnVisibleChanged(e);
+            if (!Visible)
+            {
+                _floatingTooltip?.Hide();
+            }
         }
 
         private void initMap()
@@ -140,6 +209,8 @@ namespace PelcoControlNM
         private void InitializeProviderDropdown()
         {
             var cmbProvider = comboBoxMapProvider;
+            if (cmbProvider == null) return;
+
             cmbProvider.Items.Clear();
 
             cmbProvider.Items.Add(new ProviderItem { Name = "OpenStreetMap", Url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png" });
@@ -183,18 +254,6 @@ namespace PelcoControlNM
                 tooltip?.SetText(map, $"Lat: {e.Latitude:F4}\nLon: {e.Longitude:F4}\nAlt: {elev:F1}m");
             }
             catch { }
-        }
-
-        protected override void OnDeactivate(EventArgs e)
-        {
-            base.OnDeactivate(e);
-            _floatingTooltip?.Hide();
-        }
-
-        protected override void OnFormClosed(FormClosedEventArgs e)
-        {
-            _floatingTooltip?.Dispose();
-            base.OnFormClosed(e);
         }
 
         // Area Selection Event -> Shows the Downloader Panel (panel1)
@@ -244,45 +303,28 @@ namespace PelcoControlNM
             }
         }
 
-        private async void LoadSettings()
+        public async void LoadSettings()
         {
-            XmlLoader xml = new XmlLoader(PelcoControl.DirectoryPath + PelcoControl.XMLName, true);
-
-            int x = xml.Get("Map/Left", int.MinValue);
-            int y = xml.Get("Map/Top", int.MinValue);
-            int w = xml.Get("Map/Width", 500);
-            int h = xml.Get("Map/Height", 350);
-
-            Screen screen;
-            if (x == int.MinValue || y == int.MinValue)
+            try
             {
-                screen = Screen.PrimaryScreen;
-                w = MathE.Clamp(w, 100, screen.Bounds.Width / 2 - 100);
-                h = MathE.Clamp(h, 100, screen.Bounds.Height / 2 - 75);
-                x = screen.Bounds.X + screen.Bounds.Width / 2 - w / 2;
-                y = screen.Bounds.Y + screen.Bounds.Height / 2 - h / 2;
-            }
-            else
-            {
-                screen = Screen.FromPoint(new Point(x, y));
-                x = MathE.Clamp(x, screen.Bounds.Left, screen.Bounds.Right);
-                y = MathE.Clamp(y, screen.Bounds.Top, screen.Bounds.Bottom);
-            }
+                XmlLoader xml = new XmlLoader(PelcoControl.DirectoryPath + PelcoControl.XMLName, true);
 
-            Left = x;
-            Top = y;
-            Width = w;
-            Height = h;
-
-            bool showDefault = false;
-            string pos = xml.Get("Map/Position", "");
-            if (!string.IsNullOrEmpty(pos))
-            {
-                string[] p = pos.Split(',');
-                if (p.Length >= 2 && double.TryParse(p[0], out double parsedLat) && double.TryParse(p[1], out double parsedLon) && (Math.Abs(parsedLat) > 0.001 || Math.Abs(parsedLon) > 0.001))
+                bool showDefault = false;
+                string pos = xml.Get("Map/Position", "");
+                if (!string.IsNullOrEmpty(pos))
                 {
-                    ddLatPos = parsedLat;
-                    ddLonPos = parsedLon;
+                    string[] p = pos.Split(',');
+                    if (p.Length >= 2 && double.TryParse(p[0], out double parsedLat) && double.TryParse(p[1], out double parsedLon) && (Math.Abs(parsedLat) > 0.001 || Math.Abs(parsedLon) > 0.001))
+                    {
+                        ddLatPos = parsedLat;
+                        ddLonPos = parsedLon;
+                    }
+                    else
+                    {
+                        showDefault = true;
+                        ddLatPos = (parent != null && Math.Abs(parent.Latitude) > 0.001) ? parent.Latitude : 31.5;
+                        ddLonPos = (parent != null && Math.Abs(parent.Longitude) > 0.001) ? parent.Longitude : 34.75;
+                    }
                 }
                 else
                 {
@@ -290,71 +332,66 @@ namespace PelcoControlNM
                     ddLatPos = (parent != null && Math.Abs(parent.Latitude) > 0.001) ? parent.Latitude : 31.5;
                     ddLonPos = (parent != null && Math.Abs(parent.Longitude) > 0.001) ? parent.Longitude : 34.75;
                 }
+
+                double zoom = xml.Get("Map/Zoom", 0d);
+                if (zoom <= 0)
+                {
+                    zoom = GetZoomForRadiusKm(showDefault ? 235 : 5, ddLatPos);
+                }
+
+                zoom = MathE.Clamp(zoom, 2, 18);
+                _currentZoom = zoom;
+
+                // Atomically set both position and zoom level directly upon startup
+                CameraIconType = xml.Get("Map/CameraIconType", "camera_ptz");
+                TargetIconType = xml.Get("Map/TargetIconType", "crosshair");
+                CameraColor = xml.Get("Map/CameraColor", "#00D4FF");
+                TargetColor = xml.Get("Map/TargetColor", "#EF4444");
+                HighlightColor = xml.Get("Map/HighlightColor", "#00E5FF");
+
+                InitializeIconContextMenu();
+
+                await map.NavigateToAsync(ddLatPos, ddLonPos, zoom);
+                await SetPosition(center: false);
             }
-            else
+            catch
             {
-                showDefault = true;
+                // Fallback for standalone / designer environments
                 ddLatPos = (parent != null && Math.Abs(parent.Latitude) > 0.001) ? parent.Latitude : 31.5;
                 ddLonPos = (parent != null && Math.Abs(parent.Longitude) > 0.001) ? parent.Longitude : 34.75;
+                _currentZoom = 12;
+
+                InitializeIconContextMenu();
+
+                await map.NavigateToAsync(ddLatPos, ddLonPos, _currentZoom);
+                await SetPosition(center: false);
             }
-
-            double zoom = xml.Get("Map/Zoom", 0d);
-            if (zoom <= 0)
-            {
-                zoom = GetZoomForRadiusKm(showDefault ? 235 : 5, ddLatPos);
-            }
-
-            zoom = MathE.Clamp(zoom, 2, 18);
-            _currentZoom = zoom;
-
-            // Atomically set both position and zoom level directly upon startup
-            CameraIconType = xml.Get("Map/CameraIconType", "camera_ptz");
-            TargetIconType = xml.Get("Map/TargetIconType", "crosshair");
-            CameraColor = xml.Get("Map/CameraColor", "#00D4FF");
-            TargetColor = xml.Get("Map/TargetColor", "#EF4444");
-            HighlightColor = xml.Get("Map/HighlightColor", "#00E5FF");
-
-            InitializeIconContextMenu();
-
-            await map.NavigateToAsync(ddLatPos, ddLonPos, zoom);
-            await SetPosition(center: false);
         }
 
-        private void SaveSettings()
+        public void SaveSettings()
         {
-            XmlLoader xml = new XmlLoader(PelcoControl.DirectoryPath + PelcoControl.XMLName);
-
-            if (WindowState == FormWindowState.Normal)
+            try
             {
-                xml.Set("Map/Left", Left);
-                xml.Set("Map/Top", Top);
-                xml.Set("Map/Width", Width);
-                xml.Set("Map/Height", Height);
-            }
-            else
-            {
-                xml.Set("Map/Left", RestoreBounds.Left);
-                xml.Set("Map/Top", RestoreBounds.Top);
-                xml.Set("Map/Width", RestoreBounds.Width);
-                xml.Set("Map/Height", RestoreBounds.Height);
-            }
+                XmlLoader xml = new XmlLoader(PelcoControl.DirectoryPath + PelcoControl.XMLName);
 
-            if (Math.Abs(_currentCenterLat) > 0.001 || Math.Abs(_currentCenterLon) > 0.001)
-            {
-                xml.Set("Map/Position", $"{_currentCenterLat},{_currentCenterLon}");
-            }
-            if (_currentZoom > 1)
-            {
-                xml.Set("Map/Zoom", _currentZoom);
-            }
+                if (Math.Abs(_currentCenterLat) > 0.001 || Math.Abs(_currentCenterLon) > 0.001)
+                {
+                    xml.Set("Map/Position", $"{_currentCenterLat},{_currentCenterLon}");
+                }
+                if (_currentZoom > 1)
+                {
+                    xml.Set("Map/Zoom", _currentZoom);
+                }
 
-            xml.Set("Map/CameraIconType", CameraIconType);
-            xml.Set("Map/TargetIconType", TargetIconType);
-            xml.Set("Map/CameraColor", CameraColor);
-            xml.Set("Map/TargetColor", TargetColor);
-            xml.Set("Map/HighlightColor", HighlightColor);
+                xml.Set("Map/CameraIconType", CameraIconType);
+                xml.Set("Map/TargetIconType", TargetIconType);
+                xml.Set("Map/CameraColor", CameraColor);
+                xml.Set("Map/TargetColor", TargetColor);
+                xml.Set("Map/HighlightColor", HighlightColor);
 
-            xml.Save();
+                xml.Save();
+            }
+            catch { }
         }
 
         private void InitializeIconContextMenu()
@@ -465,6 +502,9 @@ namespace PelcoControlNM
                     }
                 }
             };
+            miCameraColor.DropDownItems.Add(miCustomCameraColor);
+            menu.Items.Add(miCameraColor);
+
             map.ContextMenuStrip = menu;
         }
 
@@ -693,16 +733,6 @@ namespace PelcoControlNM
             }
         }
 
-        private void frmMap_FormClosing(object sender, FormClosingEventArgs e)
-        {
-            if (cts != null && !cts.IsCancellationRequested)
-            {
-                cts.Cancel();
-            }
-
-            SaveSettings();
-        }
-
         private async void btnCenter_Click(object sender, EventArgs e)
         {
             await Center();
@@ -832,15 +862,15 @@ namespace PelcoControlNM
             double camAlt = (elevationManager != null ? elevationManager.GetElevation(ddLatPos, ddLonPos) : 0) + InstallHeight;
             var angles = GetAngles(ddLatPos, ddLonPos, camAlt, lastPoint.Lat, lastPoint.Lon, lastElevation);
 
-            parent.GotoDeg(angles.Bearing + parent.AzimuthOffset, angles.Pitch + parent.ElevationOffset, false);
+            parent?.GotoDeg(angles.Bearing + (parent != null ? parent.AzimuthOffset : 0), angles.Pitch + (parent != null ? parent.ElevationOffset : 0), false);
         }
 
         private void miGotoNoElevation_Click(object sender, EventArgs e)
         {
             var bearing = CalculateBearing(ddLatPos, ddLonPos, lastPoint.Lat, lastPoint.Lon);
-            double cameraAngle = (bearing + parent.AzimuthOffset + 360) % 360;
+            double cameraAngle = (bearing + (parent != null ? parent.AzimuthOffset : 0) + 360) % 360;
 
-            parent.GotoDeg(cameraAngle, parent.CurrentTilt, false);
+            parent?.GotoDeg(cameraAngle, parent != null ? parent.CurrentTilt : 0, false);
         }
 
         public static double CalculateBearing(double lat1, double lon1, double lat2, double lon2)
@@ -970,59 +1000,6 @@ namespace PelcoControlNM
             double lon2 = lon1 + Math.Atan2(Math.Sin(brng) * Math.Sin(dist / R) * Math.Cos(lat1), Math.Cos(dist / R) - Math.Sin(lat1) * Math.Sin(lat2));
 
             return (lat2 * 180.0 / Math.PI, lon2 * 180.0 / Math.PI);
-        }
-    }
-
-    /// <summary>
-    /// Lightweight non-activating floating tooltip window that renders above all Win32 and OpenGL child surfaces.
-    /// </summary>
-    internal class FloatingTooltipForm : Form
-    {
-        private readonly Label _lblText;
-
-        public FloatingTooltipForm()
-        {
-            FormBorderStyle = FormBorderStyle.None;
-            StartPosition = FormStartPosition.Manual;
-            ShowInTaskbar = false;
-            BackColor = Color.FromArgb(20, 20, 20);
-            TopMost = true;
-            AutoSize = true;
-            AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            Padding = new Padding(1);
-
-            _lblText = new Label
-            {
-                AutoSize = true,
-                BackColor = Color.FromArgb(30, 30, 30),
-                ForeColor = Color.FromArgb(0, 229, 255),
-                Font = new Font("Consolas", 9.5f, FontStyle.Bold),
-                Padding = new Padding(6, 4, 6, 4),
-                Margin = new Padding(0)
-            };
-            Controls.Add(_lblText);
-        }
-
-        protected override bool ShowWithoutActivation => true;
-
-        protected override CreateParams CreateParams
-        {
-            get
-            {
-                var cp = base.CreateParams;
-                cp.ExStyle |= 0x08000000 | 0x00000080; // WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW
-                return cp;
-            }
-        }
-
-        public void UpdateTooltip(string text, Point screenPoint)
-        {
-            _lblText.Text = text;
-            Location = new Point(screenPoint.X + 16, screenPoint.Y + 16);
-            if (!Visible)
-            {
-                Show();
-            }
         }
     }
 }

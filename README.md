@@ -25,7 +25,6 @@ To the end user, it looks and feels exactly like a native WinForms Mapsui contro
 * `Mapsui48.Client` (.NET 4.8): The client-side library containing the WinForms panel wrapper and the IPC pipe client.
 * `Mapsui48.Host` (.NET 8 WPF): The map rendering engine. It outputs directly to a `Host` subfolder to avoid polluting the .NET Framework directory with .NET Core DLLs.
 * `Mapsui48.Protocol` (.NET Standard 2.0): The shared JSON contract models governing IPC communication.
-* `maperitive_parallel.ps1` & `generate_mbtiles.bat`: Multi-core parallel raster MBTiles generator for high-performance offline maps.
 
 ## 🚀 Features
 
@@ -34,7 +33,6 @@ To the end user, it looks and feels exactly like a native WinForms Mapsui contro
 * **Vector Graphics**: Supports drawing Polygons, Points, and Lines directly onto the map via the WinForms API.
 * **Bi-directional Events**: Captures `MapClicked`, `FeatureClicked`, and `ViewportChanged` events natively in WinForms.
 * **64-bit Safe**: Built entirely on `IntPtr` and thread-safe Task arrays to fully support modern Windows x64.
-* **High-Octane Parallel Tile Generation**: Includes a PowerShell script that splits Maperitive rendering into spatial 2D grids across CPU cores for 10x-15x faster offline MBTiles creation.
 
 ## 🛠️ Setup & Installation
 
@@ -44,23 +42,12 @@ To the end user, it looks and feels exactly like a native WinForms Mapsui contro
 * .NET Framework 4.8 Developer Pack
 
 ### Building the Solution
-1. Clone the repository: `git clone https://github.com/Rotem12/Mapsui-NetFramework-Wrapper.git`
-2. Open `Mapsui48.slnx` (or `Mapsui48.sln`) in Visual Studio.
+1. Clone the repository: `git clone https://github.com/YourUsername/Mapsui-NetFramework-Wrapper.git`
+2. Open `Mapsui48.sln` in Visual Studio.
 3. Set **Mapsui48.Demo** as the Startup Project.
 4. Hit **F5** (or `dotnet build` from the CLI).
 
 *Note: The MSBuild scripts are already configured to perfectly route the output directories so `Mapsui48.Host.exe` securely drops into the `bin/Debug/Host/` subfolder, keeping your runtime environment clean.*
-
-## 🗺️ Offline MBTiles Parallel Generator
-
-This repository includes a load-balanced 2D spatial grid generator (`maperitive_parallel.ps1`) for generating offline `.mbtiles` maps from OpenStreetMap `.pbf` extracts:
-
-```cmd
-generate_mbtiles.bat
-```
-* **Auto BBox Detection**: Parses the PBF header to extract exact geographical bounds.
-* **Spatial Grid Splitting**: Automatically divides max-zoom rendering across CPU cores for maximum speedup.
-* **Automatic SQLite Merge**: Combines all tile parts into a single consolidated `.mbtiles` file ready to use.
 
 ## 💻 Code Example
 
@@ -98,7 +85,7 @@ public partial class MainForm : Form
     
     private async void btnFly_Click(object sender, EventArgs e)
     {
-        // Smoothly navigate home
+        // Automatically calculate the boundaries of your offline map and smoothly zoom to fit it
         await _mapPanel.GoHomeAsync(durationMs: 2000);
     }
 }

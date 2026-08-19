@@ -45,7 +45,7 @@ namespace Mapsui48.Client
             
             _animationTimer = new Timer { Interval = 16 }; // ~60fps
             _animationTimer.Tick += AnimationTimer_Tick;
-            _animationTimer.Start();
+            // Timer starts on demand when hovering/leaving buttons
         }
 
         public void AttachEvents()
@@ -89,7 +89,15 @@ namespace Mapsui48.Client
             changed |= AnimateScale(ref _scaleIn, _hoverIndex == 1 ? 1.3f : 1.0f);
             changed |= AnimateScale(ref _scaleOut, _hoverIndex == 2 ? 1.3f : 1.0f);
             
-            if (changed) this.Invalidate();
+            if (changed)
+            {
+                this.Invalidate();
+            }
+            else
+            {
+                // When buttons reach resting scale, stop the timer to avoid continuous layered repaints
+                _animationTimer.Stop();
+            }
         }
         
         private bool AnimateScale(ref float current, float target)
@@ -115,13 +123,18 @@ namespace Mapsui48.Client
             if (_hoverIndex != newHover)
             {
                 _hoverIndex = newHover;
+                if (!_animationTimer.Enabled) _animationTimer.Start();
             }
         }
         
         protected override void OnMouseLeave(EventArgs e)
         {
             base.OnMouseLeave(e);
-            _hoverIndex = -1;
+            if (_hoverIndex != -1)
+            {
+                _hoverIndex = -1;
+                if (!_animationTimer.Enabled) _animationTimer.Start();
+            }
         }
 
         protected override void OnMouseClick(MouseEventArgs e)
