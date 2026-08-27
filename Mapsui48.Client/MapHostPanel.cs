@@ -16,6 +16,23 @@ namespace Mapsui48.Client
         public string CachePath { get; set; }
         public string HostExePath { get; set; }
 
+        private bool _enableOfflineMap = true;
+        public bool EnableOfflineMap
+        {
+            get => _enableOfflineMap;
+            set
+            {
+                if (_enableOfflineMap != value)
+                {
+                    _enableOfflineMap = value;
+                    if (IsHostReady)
+                    {
+                        _ = SetOfflineMapEnabledAsync(value);
+                    }
+                }
+            }
+        }
+
         public event EventHandler<MapClickedEvent> MapClicked;
         public event EventHandler<MapDoubleClickedEvent> MapDoubleClicked;
         public event EventHandler<FeatureClickedEvent> FeatureClicked;
@@ -365,7 +382,8 @@ namespace Mapsui48.Client
                 _isLoaded = true;
                 try
                 {
-                    await _client.StartAsync(this.Handle, HostExePath, MBTilesPath, OnlineUrl, CachePath);
+                    string effectiveMbTiles = _enableOfflineMap ? this.MBTilesPath : null;
+                    await _client.StartAsync(this.Handle, HostExePath, effectiveMbTiles, OnlineUrl, CachePath);
                     
                     _overlayUI = new MapOverlayUI(this);
                     _overlayUI.AttachEvents();
@@ -458,7 +476,23 @@ namespace Mapsui48.Client
                 try
                 {
                     await WhenReadyAsync();
-                    await _client.SetTileSourceAsync(this.MBTilesPath, this.OnlineUrl, this.CachePath);
+                    string effectiveMbTiles = _enableOfflineMap ? this.MBTilesPath : null;
+                    await _client.SetTileSourceAsync(effectiveMbTiles, this.OnlineUrl, this.CachePath);
+                }
+                catch { }
+            }
+        }
+
+        public async Task SetOfflineMapEnabledAsync(bool enabled)
+        {
+            _enableOfflineMap = enabled;
+            if (_client != null)
+            {
+                try
+                {
+                    await WhenReadyAsync();
+                    string effectiveMbTiles = enabled ? this.MBTilesPath : null;
+                    await _client.SetTileSourceAsync(effectiveMbTiles, this.OnlineUrl, this.CachePath);
                 }
                 catch { }
             }

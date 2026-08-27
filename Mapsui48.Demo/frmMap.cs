@@ -47,6 +47,12 @@ namespace PelcoControlNM
         public string TargetColor { get; set; } = "#EF4444";
         public string HighlightColor { get; set; } = "#00E5FF";
 
+        public bool EnableOfflineMap
+        {
+            get => map.EnableOfflineMap;
+            set => map.EnableOfflineMap = value;
+        }
+
         // Viewport tracking
         private double _currentCenterLat = 31.5;
         private double _currentCenterLon = 34.75;
@@ -421,6 +427,7 @@ namespace PelcoControlNM
                     CameraColor = xml.Get("MapStyle/CameraColor", "#00D4FF");
                     TargetColor = xml.Get("MapStyle/TargetColor", "#EF4444");
                     HighlightColor = xml.Get("MapStyle/HighlightColor", "#00E5FF");
+                    EnableOfflineMap = xml.Get("MapStyle/EnableOfflineMap", true);
                 }
                 else
                 {
@@ -429,6 +436,7 @@ namespace PelcoControlNM
                     CameraColor = "#00D4FF";
                     TargetColor = "#EF4444";
                     HighlightColor = "#00E5FF";
+                    EnableOfflineMap = true;
                 }
             }
             catch
@@ -447,6 +455,7 @@ namespace PelcoControlNM
                 xml.Set("MapStyle/CameraColor", CameraColor);
                 xml.Set("MapStyle/TargetColor", TargetColor);
                 xml.Set("MapStyle/HighlightColor", HighlightColor);
+                xml.Set("MapStyle/EnableOfflineMap", EnableOfflineMap);
                 xml.Save();
             }
             catch
@@ -592,6 +601,20 @@ namespace PelcoControlNM
             };
             miCameraColor.DropDownItems.Add(miCustomCameraColor);
             menu.Items.Add(miCameraColor);
+
+            // 5. Offline Map Toggle
+            var miOfflineMap = new ToolStripMenuItem("Enable Offline Map (MBTiles)")
+            {
+                CheckOnClick = true,
+                Checked = EnableOfflineMap
+            };
+            miOfflineMap.Click += (s, e) =>
+            {
+                EnableOfflineMap = miOfflineMap.Checked;
+                SaveStyleSettings();
+            };
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(miOfflineMap);
 
             ApplyDimGrayTheme(menu);
         }

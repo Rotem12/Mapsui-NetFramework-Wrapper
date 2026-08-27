@@ -701,6 +701,20 @@ namespace Mapsui48.Demo
             }
             _styleContextMenu.Items.Add(miCameraColor);
 
+            // 5. Offline Map Toggle
+            var miOfflineMap = new ToolStripMenuItem("Enable Offline Map (MBTiles)")
+            {
+                CheckOnClick = true,
+                Checked = _mapPanel.EnableOfflineMap
+            };
+            miOfflineMap.Click += (s, e) =>
+            {
+                _mapPanel.EnableOfflineMap = miOfflineMap.Checked;
+                lblStatus.Text = $"Offline Map: {(miOfflineMap.Checked ? "Enabled" : "Disabled")}";
+            };
+            _styleContextMenu.Items.Add(new ToolStripSeparator());
+            _styleContextMenu.Items.Add(miOfflineMap);
+
             ApplyDimGrayToMenu(_styleContextMenu);
 
             // Wire bottom-left circular style button on map

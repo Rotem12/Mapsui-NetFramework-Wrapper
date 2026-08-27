@@ -142,7 +142,10 @@ namespace Mapsui48.Host.Services
                 _mapControl.Map.Layers.Insert(i, layers[i]);
             }
 
-            GoHome(0);
+            if (double.IsNaN(_mapControl.Map.Navigator.Viewport.CenterX) || _mapControl.Map.Navigator.Viewport.Width <= 0)
+            {
+                GoHome(0);
+            }
             _mapControl.Refresh();
         }
 
