@@ -45,25 +45,52 @@ namespace Mapsui48.Client
             
             _animationTimer = new Timer { Interval = 16 }; // ~60fps
             _animationTimer.Tick += AnimationTimer_Tick;
-            _animationTimer.Start();
+            // Timer starts on demand when hovering/leaving buttons
         }
 
         public void AttachEvents()
         {
+            HookParentForm();
+            _parentPanel.ParentChanged += (s, e) => HookParentForm();
+            _parentPanel.Resize += (s, e) => UpdatePosition();
+            _parentPanel.VisibleChanged += (s, e) => UpdatePosition();
+            _parentPanel.HandleCreated += (s, e) => UpdatePosition();
+            UpdatePosition();
+        }
+
+        private void HookParentForm()
+        {
             var form = _parentPanel.FindForm();
             if (form != null)
             {
-                form.LocationChanged += (s, e) => UpdatePosition();
-                form.SizeChanged += (s, e) => UpdatePosition();
+                form.LocationChanged -= Form_PositionOrVisibilityChanged;
+                form.LocationChanged += Form_PositionOrVisibilityChanged;
+                form.SizeChanged -= Form_PositionOrVisibilityChanged;
+                form.SizeChanged += Form_PositionOrVisibilityChanged;
+                form.Shown -= Form_PositionOrVisibilityChanged;
+                form.Shown += Form_PositionOrVisibilityChanged;
+                form.Activated -= Form_PositionOrVisibilityChanged;
+                form.Activated += Form_PositionOrVisibilityChanged;
+                form.VisibleChanged -= Form_PositionOrVisibilityChanged;
+                form.VisibleChanged += Form_PositionOrVisibilityChanged;
             }
-            _parentPanel.Resize += (s, e) => UpdatePosition();
-            _parentPanel.VisibleChanged += (s, e) => UpdatePosition();
+        }
+
+        private void Form_PositionOrVisibilityChanged(object sender, EventArgs e)
+        {
             UpdatePosition();
         }
 
         public void UpdatePosition()
         {
-            if (_parentPanel.IsDisposed || !_parentPanel.Visible)
+            if (_parentPanel.IsDisposed || !_parentPanel.Visible || !_parentPanel.IsHandleCreated)
+            {
+                this.Hide();
+                return;
+            }
+            
+            var form = _parentPanel.FindForm();
+            if (form == null || !form.Visible)
             {
                 this.Hide();
                 return;
@@ -75,9 +102,9 @@ namespace Mapsui48.Client
                 this.Location = screenPos;
             }
             
-            if (!this.Visible && _parentPanel.Visible) 
+            if (!this.Visible) 
             {
-                this.Show(_parentPanel.FindForm());
+                this.Show(form);
             }
         }
 
@@ -89,7 +116,15 @@ namespace Mapsui48.Client
             changed |= AnimateScale(ref _scaleIn, _hoverIndex == 1 ? 1.3f : 1.0f);
             changed |= AnimateScale(ref _scaleOut, _hoverIndex == 2 ? 1.3f : 1.0f);
             
-            if (changed) this.Invalidate();
+            if (changed)
+            {
+                this.Invalidate();
+            }
+            else
+            {
+                // When buttons reach resting scale, stop the timer to avoid continuous layered repaints
+                _animationTimer.Stop();
+            }
         }
         
         private bool AnimateScale(ref float current, float target)
@@ -115,13 +150,18 @@ namespace Mapsui48.Client
             if (_hoverIndex != newHover)
             {
                 _hoverIndex = newHover;
+                if (!_animationTimer.Enabled) _animationTimer.Start();
             }
         }
         
         protected override void OnMouseLeave(EventArgs e)
         {
             base.OnMouseLeave(e);
-            _hoverIndex = -1;
+            if (_hoverIndex != -1)
+            {
+                _hoverIndex = -1;
+                if (!_animationTimer.Enabled) _animationTimer.Start();
+            }
         }
 
         protected override void OnMouseClick(MouseEventArgs e)

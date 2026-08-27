@@ -64,4 +64,39 @@ namespace Mapsui48.Protocol
             EventType = "AreaSelected";
         }
     }
+
+    public class MapPointerMovedEvent : MapEvent
+    {
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+        public double ScreenX { get; set; }
+        public double ScreenY { get; set; }
+
+        public MapPointerMovedEvent()
+        {
+            EventType = "MapPointerMoved";
+        }
+    }
+
+    public class MapDoubleClickedEvent : MapEvent
+    {
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+        public double ScreenX { get; set; }
+        public double ScreenY { get; set; }
+
+        public MapDoubleClickedEvent()
+        {
+            EventType = "MapDoubleClicked";
+        }
+    }
+
+    public class MapPointerLeftEvent : MapEvent
+    {
+        public MapPointerLeftEvent()
+        {
+            EventType = "MapPointerLeft";
+        }
+    }
 }
+

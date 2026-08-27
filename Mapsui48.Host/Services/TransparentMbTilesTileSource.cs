@@ -17,9 +17,8 @@ namespace Mapsui48.Host.Services
     {
         private readonly ILocalTileSource _inner;
 
-        // Simple in-memory LRU cache to avoid re-processing the same tile, 
-        // with limits to prevent memory leaks during heavy panning.
-        private readonly BruTile.Cache.MemoryCache<byte[]> _cache = new(100, 200);
+        // In-memory LRU cache sized to handle extensive multi-zoom panning smoothly
+        private readonly BruTile.Cache.MemoryCache<byte[]> _cache = new(1500, 2500);
 
         // Sea color from Transparent.mrules  (map-sea-color and water fill-color)
         // #AAD3DF  →  R 170, G 211, B 223
@@ -65,6 +64,7 @@ namespace Mapsui48.Host.Services
         /// Decodes a PNG/JPEG tile, zeroes the alpha channel of every pixel whose
         /// colour is within <see cref="Tolerance"/> of the sea colour, then
         /// re-encodes as PNG (which supports transparency).
+        /// If no sea pixels are found (e.g. inland tiles), returns raw tile bytes directly.
         /// </summary>
         private static byte[] StripSeaColor(byte[] tileBytes)
         {
@@ -93,10 +93,16 @@ namespace Mapsui48.Host.Services
 
             try
             {
-                MakeSeaPixelsTransparent(workBitmap);
+                bool modified = MakeSeaPixelsTransparent(workBitmap);
+                if (!modified)
+                {
+                    // Performance optimization: No sea pixels were modified!
+                    // Return raw bytes directly with zero re-encoding CPU overhead and zero memory allocation.
+                    return tileBytes;
+                }
 
                 using var image = SKImage.FromBitmap(workBitmap);
-                using var encoded = image.Encode(SKEncodedImageFormat.Png, 100);
+                using var encoded = image.Encode(SKEncodedImageFormat.Png, 80);
                 return encoded.ToArray();
             }
             finally
@@ -109,12 +115,13 @@ namespace Mapsui48.Host.Services
         /// <summary>
         /// Walks every pixel via an unsafe pointer scan and sets alpha = 0 for
         /// pixels whose RGB falls within the tolerance band of the sea colour.
+        /// Returns true if at least one pixel was made transparent.
         /// </summary>
-        private static unsafe void MakeSeaPixelsTransparent(SKBitmap bitmap)
+        private static unsafe bool MakeSeaPixelsTransparent(SKBitmap bitmap)
         {
             IntPtr pixelsPtr = bitmap.GetPixels();
             if (pixelsPtr == IntPtr.Zero)
-                return;
+                return false;
 
             byte* ptr    = (byte*)pixelsPtr;
             int width    = bitmap.Width;
@@ -127,6 +134,8 @@ namespace Mapsui48.Host.Services
             int rIdx = isBgra ? 2 : 0;
             int bIdx = isBgra ? 0 : 2;
             // gIdx = 1, aIdx = 3 for both layouts
+
+            bool modified = false;
 
             for (int y = 0; y < height; y++)
             {
@@ -148,9 +157,12 @@ namespace Mapsui48.Host.Services
                         db >= -Tolerance && db <= Tolerance)
                     {
                         px[3] = 0;      // make transparent
+                        modified = true;
                     }
                 }
             }
+
+            return modified;
         }
     }
 }

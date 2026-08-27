@@ -1,10 +1,24 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Mapsui48.Protocol\Mapsui48.Protocol.csproj" />
+    <ProjectReference Include="..\Mapsui48.Host\Mapsui48.Host.csproj" />
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <PackageReference Include="Mapsui.WindowsForms" Version="5.1.0" />
+    <PackageReference Include="Mapsui.Nts" Version="5.1.0" />
+    <PackageReference Include="SkiaSharp" Version="3.119.2" />
+    <PackageReference Include="Svg.Skia" Version="3.119.2" />
+  </ItemGroup>
 
 </Project>

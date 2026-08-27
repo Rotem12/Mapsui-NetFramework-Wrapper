@@ -15,6 +15,16 @@ namespace Mapsui48.Host.Services
 {
     public static class TileService
     {
+        static TileService()
+        {
+            // Boost HTTP connection concurrency for high-speed online tile downloading
+            try
+            {
+                System.Net.ServicePointManager.DefaultConnectionLimit = 32;
+            }
+            catch { }
+        }
+
         // Cache the parsed GeoJSON provider so we don't re-read and re-parse the
         // multi-MB file every time SetTileSource is called.
         private static Mapsui.Nts.Providers.GeoJsonProvider? _countriesProvider;
@@ -23,15 +33,22 @@ namespace Mapsui48.Host.Services
         public static List<ILayer> CreateTileLayers(string mbTilesPath, string onlineUrl, string cachePath)
         {
             var layers = new List<ILayer>();
+            bool hasOnline = !string.IsNullOrEmpty(onlineUrl);
 
             // ── Layer 0: Offline land polygons (bottom-most) ────────────────
-            // Provides tan land shapes over the sea-blue BackColor when offline.
-            var landLayer = CreateLandLayer();
-            if (landLayer is not null)
-                layers.Add(landLayer);
+            // Only add land polygons when offline (no online raster map),
+            // because online raster tiles are 100% opaque and completely obscure this layer.
+            if (!hasOnline)
+            {
+                var landLayer = CreateLandLayer();
+                if (landLayer is not null)
+                {
+                    layers.Add(landLayer);
+                }
+            }
 
             // ── Layer 1: Online OSM tiles (middle) ──────────────────────────
-            if (!string.IsNullOrEmpty(onlineUrl))
+            if (hasOnline)
             {
                 IPersistentCache<byte[]>? cache = null;
                 if (!string.IsNullOrEmpty(cachePath))
@@ -84,6 +101,18 @@ namespace Mapsui48.Host.Services
             {
                 try
                 {
+                    // Apply high-performance SQLite PRAGMAs (memory mapping & read-only caching)
+                    try
+                    {
+                        using var conn = new SQLiteConnection(new SQLiteConnectionString(mbTilesPath, false));
+                        conn.Execute("PRAGMA journal_mode = WAL;");
+                        conn.Execute("PRAGMA synchronous = OFF;");
+                        conn.Execute("PRAGMA query_only = 1;");
+                        conn.Execute("PRAGMA mmap_size = 268435456;"); // 256MB memory-mapped zero-copy I/O
+                        conn.Execute("PRAGMA cache_size = -16000;");   // 16MB SQLite page cache
+                    }
+                    catch { }
+
                     var mbtSource = new MbTilesTileSource(
                         new SQLiteConnectionString(mbTilesPath, false));
                     var transparentSource = new TransparentMbTilesTileSource(mbtSource);

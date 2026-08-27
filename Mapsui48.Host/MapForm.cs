@@ -3,12 +3,11 @@ using Mapsui.UI.WindowsForms;
 using Mapsui.Extensions;
 using System;
 using System.Windows.Forms;
-
 using System.Drawing;
 
 namespace Mapsui48.Host
 {
-    public partial class MapForm : Form, IMessageFilter
+    public partial class MapForm : Form
     {
         public MapControl MapControl { get; private set; }
         private readonly MapService _mapService;
@@ -42,10 +41,20 @@ namespace Mapsui48.Host
             // 3. Start Pipe Server
             _pipeServer = new PipeServer(pipeName, _dispatcher);
             _pipeServer.Start();
+
+            // 4. Install Global Win32 Mouse Message Filter to catch right-clicks across all HWNDs (GLControl, Skia, etc.)
+            Application.AddMessageFilter(new GlobalMouseMessageFilter(this));
         }
         
         private bool _isAttached = false;
         
+        private Point _dragStartClientPoint;
+        private bool _isDraggingSelection = false;
+        private bool _wasShiftLeftDown = false;
+        private bool _isRightMouseDown = false;
+        private Point _rightClickStartPoint;
+        private DateTime _lastPointerEventTime = DateTime.MinValue;
+
         public void AttachMapControl()
         {
             _isAttached = true;
@@ -53,8 +62,141 @@ namespace Mapsui48.Host
             {
                 this.Controls.Add(MapControl);
             }
+
             // Now that we are reparented, make the form visible
             this.Visible = true;
+        }
+
+        public void OnRawMouseDown(MouseButtons btn)
+        {
+            Point screenPt = Control.MousePosition;
+            Point clientPt = MapControl.PointToClient(screenPt);
+
+            if (!MapControl.ClientRectangle.Contains(clientPt)) return;
+
+            if (btn == MouseButtons.Right)
+            {
+                MapService.LastRightClickTime = DateTime.UtcNow;
+                _isRightMouseDown = true;
+                _rightClickStartPoint = clientPt;
+                _isDraggingSelection = false;
+                try
+                {
+                    MapControl.Focus();
+                }
+                catch { }
+            }
+            else if (btn == MouseButtons.Left)
+            {
+                bool isShiftDown = Control.ModifierKeys.HasFlag(Keys.Shift);
+                if (isShiftDown)
+                {
+                    _dragStartClientPoint = clientPt;
+                    _wasShiftLeftDown = true;
+                    _isDraggingSelection = false;
+                }
+            }
+        }
+
+        public void OnRawMouseMove()
+        {
+            Point screenPt = Control.MousePosition;
+            Point clientPt = MapControl.PointToClient(screenPt);
+
+            if (_isRightMouseDown)
+            {
+                int dx = Math.Abs(clientPt.X - _rightClickStartPoint.X);
+                int dy = Math.Abs(clientPt.Y - _rightClickStartPoint.Y);
+                // Area selection requires intentional drag > 15 pixels
+                if (dx > 15 || dy > 15)
+                {
+                    _isDraggingSelection = true;
+                    UpdateSelectionPolygon(_rightClickStartPoint, clientPt);
+                }
+            }
+            else if (_wasShiftLeftDown)
+            {
+                int dx = Math.Abs(clientPt.X - _dragStartClientPoint.X);
+                int dy = Math.Abs(clientPt.Y - _dragStartClientPoint.Y);
+                if (dx > 15 || dy > 15)
+                {
+                    _isDraggingSelection = true;
+                    UpdateSelectionPolygon(_dragStartClientPoint, clientPt);
+                }
+            }
+            else
+            {
+                // Pointer Move (Hover) - throttled to ~30ms to prevent IPC pipe flooding
+                var now = DateTime.UtcNow;
+                if ((now - _lastPointerEventTime).TotalMilliseconds >= 30)
+                {
+                    _lastPointerEventTime = now;
+                    var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPt.X, clientPt.Y);
+                    var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
+
+                    SendEvent(new Protocol.MapPointerMovedEvent
+                    {
+                        Latitude = lat,
+                        Longitude = lon,
+                        ScreenX = clientPt.X,
+                        ScreenY = clientPt.Y
+                    });
+                }
+            }
+        }
+
+        private DateTime _lastRightClickEventSent = DateTime.MinValue;
+
+        private void DispatchRightClick(Point clientPt)
+        {
+            if ((DateTime.UtcNow - _lastRightClickEventSent).TotalMilliseconds < 150) return;
+            _lastRightClickEventSent = DateTime.UtcNow;
+            MapService.LastRightClickTime = DateTime.UtcNow;
+
+            var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPt.X, clientPt.Y);
+            var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
+            SendEvent(new Protocol.MapClickedEvent
+            {
+                Latitude = lat,
+                Longitude = lon,
+                ScreenX = clientPt.X,
+                ScreenY = clientPt.Y,
+                Button = "Right"
+            });
+        }
+
+        public void OnRawMouseUp(MouseButtons btn)
+        {
+            Point screenPt = Control.MousePosition;
+            Point clientPt = MapControl.PointToClient(screenPt);
+
+            if (btn == MouseButtons.Right)
+            {
+                bool wasDragging = _isDraggingSelection;
+                _isRightMouseDown = false;
+                _isDraggingSelection = false;
+
+                if (wasDragging)
+                {
+                    FinishAreaSelection(_rightClickStartPoint, clientPt);
+                }
+                else
+                {
+                    DispatchRightClick(clientPt);
+                }
+            }
+            else if (btn == MouseButtons.Left)
+            {
+                if (_wasShiftLeftDown)
+                {
+                    _wasShiftLeftDown = false;
+                    if (_isDraggingSelection)
+                    {
+                        _isDraggingSelection = false;
+                        FinishAreaSelection(_dragStartClientPoint, clientPt);
+                    }
+                }
+            }
         }
 
         protected override void SetVisibleCore(bool value)
@@ -86,132 +228,132 @@ namespace Mapsui48.Host
             _pipeServer?.SendEvent(evt);
         }
 
-        private const int WM_LBUTTONDOWN = 0x0201;
-        private const int WM_RBUTTONDOWN = 0x0204;
-        private const int WM_RBUTTONUP = 0x0205;
-        private const int WM_MOUSEMOVE = 0x0200;
-
-        private bool _isSelectingArea;
-        private bool _isDraggingSelection;
-        private Point _selectionStart;
-        private Point _selectionCurrent;
-
-        // Automatically add message filter so we can globally catch Ctrl+RightClick
-        protected override void OnLoad(EventArgs e)
+        private void UpdateSelectionPolygon(Point p1, Point p2)
         {
-            base.OnLoad(e);
-            Application.AddMessageFilter(this);
-        }
-
-        public bool PreFilterMessage(ref Message m)
-        {
-            if (m.Msg == WM_RBUTTONDOWN)
-            {
-                if (Control.ModifierKeys.HasFlag(Keys.Control))
-                {
-                    var screenPoint = Control.MousePosition;
-                    var clientPoint = MapControl.PointToClient(screenPoint);
-                    if (MapControl.ClientRectangle.Contains(clientPoint))
-                    {
-                        _isSelectingArea = true;
-                        _isDraggingSelection = true;
-                        _selectionStart = screenPoint;
-                        _selectionCurrent = screenPoint;
-                        Cursor = Cursors.Cross;
-                        ControlPaint.DrawReversibleFrame(GetSelectionRectangle(), Color.Black, FrameStyle.Dashed);
-                        return true; // Consume event
-                    }
-                }
-            }
-            else if (m.Msg == WM_MOUSEMOVE && _isDraggingSelection)
-            {
-                var screenPoint = Control.MousePosition;
-                // Erase old
-                ControlPaint.DrawReversibleFrame(GetSelectionRectangle(), Color.Black, FrameStyle.Dashed);
-                _selectionCurrent = screenPoint;
-                // Draw new
-                ControlPaint.DrawReversibleFrame(GetSelectionRectangle(), Color.Black, FrameStyle.Dashed);
-                return true;
-            }
-            else if (m.Msg == WM_RBUTTONUP)
-            {
-                if (_isDraggingSelection)
-                {
-                    var screenPoint = Control.MousePosition;
-                    // Erase old
-                    ControlPaint.DrawReversibleFrame(GetSelectionRectangle(), Color.Black, FrameStyle.Dashed);
-                    _isDraggingSelection = false;
-                    _isSelectingArea = false;
-                    Cursor = Cursors.Default;
-                    
-                    FinishAreaSelection();
-                    return true;
-                }
-                else
-                {
-                    // Standard Right-Click: Send MapClickedEvent with Button = "Right"
-                    var screenPoint = Control.MousePosition;
-                    var clientPoint = MapControl.PointToClient(screenPoint);
-                    if (MapControl.ClientRectangle.Contains(clientPoint))
-                    {
-                        var w = MapControl.Map.Navigator.Viewport.ScreenToWorld(clientPoint.X, clientPoint.Y);
-                        var (lat, lon) = Helpers.CoordinateHelper.ToWgs84(w.X, w.Y);
-
-                        SendEvent(new Protocol.MapClickedEvent
-                        {
-                            Latitude = lat,
-                            Longitude = lon,
-                            ScreenX = clientPoint.X,
-                            ScreenY = clientPoint.Y,
-                            Button = "Right"
-                        });
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        private Rectangle GetSelectionRectangle()
-        {
-            return new Rectangle(
-                Math.Min(_selectionStart.X, _selectionCurrent.X),
-                Math.Min(_selectionStart.Y, _selectionCurrent.Y),
-                Math.Abs(_selectionStart.X - _selectionCurrent.X),
-                Math.Abs(_selectionStart.Y - _selectionCurrent.Y)
-            );
-        }
-
-        private void FinishAreaSelection()
-        {
-            var p1 = MapControl.PointToClient(_selectionStart);
-            var p2 = MapControl.PointToClient(_selectionCurrent);
-            
             var w1 = MapControl.Map.Navigator.Viewport.ScreenToWorld(p1.X, p1.Y);
             var w2 = MapControl.Map.Navigator.Viewport.ScreenToWorld(p2.X, p2.Y);
 
             var (lat1, lon1) = Helpers.CoordinateHelper.ToWgs84(w1.X, w1.Y);
             var (lat2, lon2) = Helpers.CoordinateHelper.ToWgs84(w2.X, w2.Y);
-            
-            var rect = GetSelectionRectangle();
 
-            SendEvent(new Protocol.AreaSelectedEvent
+            double minLat = Math.Min(lat1, lat2);
+            double maxLat = Math.Max(lat1, lat2);
+            double minLon = Math.Min(lon1, lon2);
+            double maxLon = Math.Max(lon1, lon2);
+
+            _mapService.AddPolygon(new Protocol.AddPolygonCommand
             {
-                MinLat = Math.Min(lat1, lat2),
-                MinLon = Math.Min(lon1, lon2),
-                MaxLat = Math.Max(lat1, lat2),
-                MaxLon = Math.Max(lon1, lon2),
-                ScreenX = rect.X,
-                ScreenY = rect.Y,
-                ScreenWidth = rect.Width,
-                ScreenHeight = rect.Height
+                LayerName = "Selection",
+                Coordinates = new Protocol.Coordinate[]
+                {
+                    new Protocol.Coordinate(maxLat, minLon),
+                    new Protocol.Coordinate(maxLat, maxLon),
+                    new Protocol.Coordinate(minLat, maxLon),
+                    new Protocol.Coordinate(minLat, minLon),
+                    new Protocol.Coordinate(maxLat, minLon)
+                },
+                FillColor = "#3300D4FF",
+                OutlineColor = "#00D4FF",
+                OutlineWidth = 2.0
             });
         }
 
-        protected override void OnFormClosed(FormClosedEventArgs e)
+        private void FinishAreaSelection(Point p1, Point p2)
         {
-            _pipeServer?.Dispose();
-            base.OnFormClosed(e);
+            var w1 = MapControl.Map.Navigator.Viewport.ScreenToWorld(p1.X, p1.Y);
+            var w2 = MapControl.Map.Navigator.Viewport.ScreenToWorld(p2.X, p2.Y);
+
+            var (lat1, lon1) = Helpers.CoordinateHelper.ToWgs84(w1.X, w1.Y);
+            var (lat2, lon2) = Helpers.CoordinateHelper.ToWgs84(w2.X, w2.Y);
+
+            double minLat = Math.Min(lat1, lat2);
+            double maxLat = Math.Max(lat1, lat2);
+            double minLon = Math.Min(lon1, lon2);
+            double maxLon = Math.Max(lon1, lon2);
+
+            SendEvent(new Protocol.AreaSelectedEvent
+            {
+                MinLat = minLat,
+                MaxLat = maxLat,
+                MinLon = minLon,
+                MaxLon = maxLon
+            });
+        }
+
+        public void OnRawMouseLeave()
+        {
+            SendEvent(new Protocol.MapPointerLeftEvent());
+        }
+    }
+
+    internal class GlobalMouseMessageFilter : IMessageFilter
+    {
+        private const int WM_RBUTTONDOWN = 0x0204;
+        private const int WM_RBUTTONUP = 0x0205;
+        private const int WM_LBUTTONDOWN = 0x0201;
+        private const int WM_LBUTTONUP = 0x0202;
+        private const int WM_MOUSEMOVE = 0x0200;
+        private const int WM_MOUSELEAVE = 0x02A3;
+
+        private const uint TME_LEAVE = 0x00000002;
+
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+        private struct TRACKMOUSEEVENT
+        {
+            public uint cbSize;
+            public uint dwFlags;
+            public IntPtr hwndTrack;
+            public uint dwHoverTime;
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool TrackMouseEvent(ref TRACKMOUSEEVENT lpEventTrack);
+
+        private readonly MapForm _form;
+        private bool _isTrackingLeave = false;
+
+        public GlobalMouseMessageFilter(MapForm form)
+        {
+            _form = form;
+        }
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            switch (m.Msg)
+            {
+                case WM_RBUTTONDOWN:
+                    _form.OnRawMouseDown(MouseButtons.Right);
+                    break;
+                case WM_RBUTTONUP:
+                    _form.OnRawMouseUp(MouseButtons.Right);
+                    break;
+                case WM_LBUTTONDOWN:
+                    _form.OnRawMouseDown(MouseButtons.Left);
+                    break;
+                case WM_LBUTTONUP:
+                    _form.OnRawMouseUp(MouseButtons.Left);
+                    break;
+                case WM_MOUSEMOVE:
+                    if (!_isTrackingLeave)
+                    {
+                        _isTrackingLeave = true;
+                        var tme = new TRACKMOUSEEVENT
+                        {
+                            cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<TRACKMOUSEEVENT>(),
+                            dwFlags = TME_LEAVE,
+                            hwndTrack = m.HWnd,
+                            dwHoverTime = 0
+                        };
+                        TrackMouseEvent(ref tme);
+                    }
+                    _form.OnRawMouseMove();
+                    break;
+                case WM_MOUSELEAVE:
+                    _isTrackingLeave = false;
+                    _form.OnRawMouseLeave();
+                    break;
+            }
+            return false;
         }
     }
 }
