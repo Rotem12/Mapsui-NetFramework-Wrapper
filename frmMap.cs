@@ -290,10 +290,7 @@ namespace PelcoControlNM
         private void MapPanel_FeatureClicked(object sender, FeatureClickedEvent e)
         {
             if (!IsHandleCreated || IsDisposed) return;
-            Invoke((MethodInvoker)delegate
-            {
-                MessageBox.Show($"Feature: {e.FeatureId} (Layer: {e.LayerName}) at {e.Latitude:F4}, {e.Longitude:F4}", "Feature Selected");
-            });
+            // Target click handled via MapClicked and hit-testing
         }
 
         private void MapPanel_MapClicked(object sender, MapClickedEvent e)
@@ -301,17 +298,33 @@ namespace PelcoControlNM
             lastPoint = (e.Latitude, e.Longitude);
             lastElevation = elevationManager != null ? elevationManager.GetElevation(lastPoint.Lat, lastPoint.Lon) : 0;
 
-            // Left-click clears active area selection and hides panel1
-            if (e.Button == "Left" && _selectedArea != null)
+            if (e.Button == "Left")
             {
-                _selectedArea = null;
-                _ = map.ClearLayerAsync("Selection");
-                if (!IsHandleCreated || IsDisposed) return;
-                Invoke((MethodInvoker)delegate
+                // Left-click on target -> Goto (Bearing / No Elevation)
+                var targetHit = GetTargetAt(e.Latitude, e.Longitude);
+                if (targetHit.HasValue)
                 {
-                    if (panel1 != null)
-                        panel1.Visible = false;
-                });
+                    var target = targetHit.Value.Info;
+                    lastPoint = (target.Lat, target.Lon);
+                    var bearing = CalculateBearing(ddLatPos, ddLonPos, lastPoint.Lat, lastPoint.Lon);
+                    double cameraAngle = (bearing + (parent != null ? parent.AzimuthOffset : 0) + 360) % 360;
+
+                    parent?.GotoDeg(cameraAngle, parent != null ? parent.CurrentTilt : 0, false);
+                    return;
+                }
+
+                // Left-click clears active area selection and hides panel1
+                if (_selectedArea != null)
+                {
+                    _selectedArea = null;
+                    _ = map.ClearLayerAsync("Selection");
+                    if (!IsHandleCreated || IsDisposed) return;
+                    Invoke((MethodInvoker)delegate
+                    {
+                        if (panel1 != null)
+                            panel1.Visible = false;
+                    });
+                }
             }
         }
 

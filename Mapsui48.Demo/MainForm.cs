@@ -760,19 +760,33 @@ namespace Mapsui48.Demo
         private void MapPanel_FeatureClicked(object sender, FeatureClickedEvent e)
         {
             if (!IsHandleCreated || IsDisposed) return;
-            Invoke((MethodInvoker)delegate
-            {
-                MessageBox.Show($"Clicked feature {e.FeatureId} on layer {e.LayerName} at {e.Latitude:F4}, {e.Longitude:F4}", "Feature Clicked");
-            });
+            // Feature interaction handled via MapClicked and hit-testing
         }
 
-        private void MapPanel_MapClicked(object sender, MapClickedEvent e)
+        private async void MapPanel_MapClicked(object sender, MapClickedEvent e)
         {
             if (!IsHandleCreated || IsDisposed) return;
-            Invoke((MethodInvoker)delegate
+
+            if (e.Button == "Left")
             {
-                Console.WriteLine($"Map clicked at {e.Latitude:F4}, {e.Longitude:F4}");
-            });
+                // Left-click on target -> Goto (Bearing / No Elevation)
+                var targetHit = GetTargetAt(e.Latitude, e.Longitude);
+                if (targetHit.HasValue)
+                {
+                    var targetName = targetHit.Value.Name;
+                    var target = targetHit.Value.Info;
+                    if (_pelco != null)
+                    {
+                        var bearing = CalculateBearing(_pelco.Latitude, _pelco.Longitude, target.Lat, target.Lon);
+                        double cameraAngle = (bearing + _pelco.AzimuthOffset + 360) % 360;
+
+                        _pelco.GotoDeg(cameraAngle, _pelco.CurrentTilt, false);
+                        lblStatus.Text = $"Action: Left-Click Goto '{targetName}' Bearing only ({cameraAngle:F1}°)";
+                        await UpdateMainFormCameraDisplay(_pelco.Latitude, _pelco.Longitude, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
+                    }
+                    return;
+                }
+            }
         }
 
         private async void btnNavigate_Click(object sender, EventArgs e)
