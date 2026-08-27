@@ -127,6 +127,10 @@ namespace Mapsui48.Demo
 
             cmbProvider.Items.Add(new ProviderItem { Name = "OpenStreetMap", Url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png" });
             cmbProvider.Items.Add(new ProviderItem { Name = "Offline Only (No Online Map)", Url = "" });
+            cmbProvider.Items.Add(new ProviderItem { Name = "Govmap (Hebrew)", Url = "https://cdnil.govmap.gov.il/xyz/heb/{z}/{x}/{y}.png" });
+            cmbProvider.Items.Add(new ProviderItem { Name = "Govmap (English)", Url = "https://cdnil.govmap.gov.il/xyz/eng/{z}/{x}/{y}.png" });
+            cmbProvider.Items.Add(new ProviderItem { Name = "Israel Hiking (Hebrew)", Url = "https://israelhiking.osm.org.il/Hebrew/Tiles/{z}/{x}/{y}.png" });
+            cmbProvider.Items.Add(new ProviderItem { Name = "Israel Hiking (English)", Url = "https://israelhiking.osm.org.il/English/Tiles/{z}/{x}/{y}.png" });
             cmbProvider.Items.Add(new ProviderItem { Name = "Google Map", Url = "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" });
             cmbProvider.Items.Add(new ProviderItem { Name = "Google Satellite", Url = "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}" });
             cmbProvider.Items.Add(new ProviderItem { Name = "Google Hybrid", Url = "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}" });
@@ -153,6 +157,29 @@ namespace Mapsui48.Demo
             };
 
             panelTop.Controls.Add(cmbProvider);
+
+            _chkOfflineMap = new CheckBox
+            {
+                Text = "Enable Offline Map (MBTiles)",
+                AutoSize = true,
+                Location = new System.Drawing.Point(750, 14),
+                Checked = _mapPanel.EnableOfflineMap
+            };
+
+            _chkOfflineMap.CheckedChanged += (s, e) =>
+            {
+                if (_mapPanel.EnableOfflineMap != _chkOfflineMap.Checked)
+                {
+                    _mapPanel.EnableOfflineMap = _chkOfflineMap.Checked;
+                }
+                if (_miOfflineMap != null && _miOfflineMap.Checked != _chkOfflineMap.Checked)
+                {
+                    _miOfflineMap.Checked = _chkOfflineMap.Checked;
+                }
+                lblStatus.Text = $"Offline Map: {(_chkOfflineMap.Checked ? "Enabled" : "Disabled")}";
+            };
+
+            panelTop.Controls.Add(_chkOfflineMap);
 
             // Setup the Elevation Manager hook
             _mapPanel.OnDownloadStarted += async (bbox, minZ, maxZ, token) =>
@@ -636,6 +663,8 @@ namespace Mapsui48.Demo
         private string _cameraColor = "#FF0000";
         private string _targetColor = "#FF4500";
         private ContextMenuStrip _styleContextMenu;
+        private ToolStripMenuItem _miOfflineMap;
+        private CheckBox _chkOfflineMap;
 
         private void InitializeStyleContextMenu()
         {
@@ -702,18 +731,22 @@ namespace Mapsui48.Demo
             _styleContextMenu.Items.Add(miCameraColor);
 
             // 5. Offline Map Toggle
-            var miOfflineMap = new ToolStripMenuItem("Enable Offline Map (MBTiles)")
+            _miOfflineMap = new ToolStripMenuItem("Enable Offline Map (MBTiles)")
             {
                 CheckOnClick = true,
                 Checked = _mapPanel.EnableOfflineMap
             };
-            miOfflineMap.Click += (s, e) =>
+            _miOfflineMap.Click += (s, e) =>
             {
-                _mapPanel.EnableOfflineMap = miOfflineMap.Checked;
-                lblStatus.Text = $"Offline Map: {(miOfflineMap.Checked ? "Enabled" : "Disabled")}";
+                _mapPanel.EnableOfflineMap = _miOfflineMap.Checked;
+                if (_chkOfflineMap != null && _chkOfflineMap.Checked != _miOfflineMap.Checked)
+                {
+                    _chkOfflineMap.Checked = _miOfflineMap.Checked;
+                }
+                lblStatus.Text = $"Offline Map: {(_miOfflineMap.Checked ? "Enabled" : "Disabled")}";
             };
             _styleContextMenu.Items.Add(new ToolStripSeparator());
-            _styleContextMenu.Items.Add(miOfflineMap);
+            _styleContextMenu.Items.Add(_miOfflineMap);
 
             ApplyDimGrayToMenu(_styleContextMenu);
 

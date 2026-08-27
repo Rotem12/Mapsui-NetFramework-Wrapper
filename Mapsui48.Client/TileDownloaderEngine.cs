@@ -95,7 +95,12 @@ namespace Mapsui48.Client
             db.Insert(new MetadataRow { Name = "bounds", Value = $"{bbox.MinLon},{bbox.MinLat},{bbox.MaxLon},{bbox.MaxLat}" });
 
             using var httpClient = new HttpClient();
-            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mapsui48Downloader/1.0");
+            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+            httpClient.DefaultRequestHeaders.Accept.ParseAdd("image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
+            if (urlTemplate.Contains("govmap.gov.il"))
+            {
+                httpClient.DefaultRequestHeaders.Referrer = new Uri("https://www.govmap.gov.il/");
+            }
 
             int completed = 0;
 

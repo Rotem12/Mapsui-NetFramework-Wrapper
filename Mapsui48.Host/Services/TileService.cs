@@ -17,7 +17,7 @@ namespace Mapsui48.Host.Services
     {
         static TileService()
         {
-            // Boost HTTP connection concurrency for high-speed online tile downloading
+            // Boost HTTP connection limit
             try
             {
                 System.Net.ServicePointManager.DefaultConnectionLimit = 32;
@@ -36,8 +36,7 @@ namespace Mapsui48.Host.Services
             bool hasOnline = !string.IsNullOrEmpty(onlineUrl);
 
             // ── Layer 0: Offline land polygons (bottom-most) ────────────────
-            // Only add land polygons when offline (no online raster map),
-            // because online raster tiles are 100% opaque and completely obscure this layer.
+            // Only add land polygons when offline (no online raster map)
             if (!hasOnline)
             {
                 var landLayer = CreateLandLayer();
@@ -47,14 +46,13 @@ namespace Mapsui48.Host.Services
                 }
             }
 
-            // ── Layer 1: Online OSM tiles (middle) ──────────────────────────
+            // ── Layer 1: Online tiles (middle) ──────────────────────────────
             if (hasOnline)
             {
                 IPersistentCache<byte[]>? cache = null;
                 if (!string.IsNullOrEmpty(cachePath))
                 {
                     // Prevent tile cache collisions by isolating each provider into its own sub-folder
-                    // Use a deterministic hash (SHA256) instead of GetHashCode() which is randomized in .NET Core
                     using var sha256 = System.Security.Cryptography.SHA256.Create();
                     var hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(onlineUrl));
                     var providerFolder = BitConverter.ToString(hashBytes).Replace("-", "").Substring(0, 16);
@@ -75,7 +73,6 @@ namespace Mapsui48.Host.Services
                     var sourceName = onlineUrl.Substring(6);
                     if (Enum.TryParse<KnownTileSource>(sourceName, out var knownSource))
                     {
-                        // Use a public Mapsui dummy API key for Bing if required (BruTile allows this for testing)
                         onlineSource = KnownTileSources.Create(knownSource, "Ar3uV_38y8b9O3W8Fh7yOa04a62zE-F43UqZ7bQY-72qD3a8e-5b12D86f_8u22C", persistentCache: cache);
                     }
                     else
@@ -89,8 +86,17 @@ namespace Mapsui48.Host.Services
                         new GlobalSphericalMercator(),
                         onlineUrl,
                         new[] { "a", "b", "c" },
-                        name: "OnlineFallback",
-                        persistentCache: cache);
+                        name: "OnlineMap",
+                        persistentCache: cache,
+                        configureHttpRequestMessage: req =>
+                        {
+                            req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+                            req.Headers.Accept.ParseAdd("image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
+                            if (onlineUrl.Contains("govmap.gov.il"))
+                            {
+                                req.Headers.Referrer = new Uri("https://www.govmap.gov.il/");
+                            }
+                        });
                 }
 
                 layers.Add(new TileLayer(onlineSource) { Name = "BaseMap_Online" });
@@ -108,10 +114,13 @@ namespace Mapsui48.Host.Services
                         conn.Execute("PRAGMA journal_mode = WAL;");
                         conn.Execute("PRAGMA synchronous = OFF;");
                         conn.Execute("PRAGMA query_only = 1;");
-                        conn.Execute("PRAGMA mmap_size = 268435456;"); // 256MB memory-mapped zero-copy I/O
-                        conn.Execute("PRAGMA cache_size = -16000;");   // 16MB SQLite page cache
+                        conn.Execute("PRAGMA cache_size = -32000;"); // 32MB page cache
+                        conn.Execute("PRAGMA mmap_size = 268435456;"); // 256MB memory mapping
                     }
-                    catch { }
+                    catch
+                    {
+                        // Ignore if PRAGMAs fail
+                    }
 
                     var mbtSource = new MbTilesTileSource(
                         new SQLiteConnectionString(mbTilesPath, false));
@@ -130,7 +139,11 @@ namespace Mapsui48.Host.Services
                 var defaultSource = new HttpTileSource(
                     new GlobalSphericalMercator(),
                     "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                    name: "DefaultOSM");
+                    name: "DefaultOSM",
+                    configureHttpRequestMessage: req =>
+                    {
+                        req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+                    });
                 layers.Add(new TileLayer(defaultSource) { Name = "BaseMap_Default" });
             }
 

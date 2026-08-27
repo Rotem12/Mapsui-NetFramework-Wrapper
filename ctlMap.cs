@@ -275,6 +275,10 @@ namespace PelcoControlNM
 
             cmbProvider.Items.Add(new ProviderItem { Name = "OpenStreetMap", Url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png" });
             cmbProvider.Items.Add(new ProviderItem { Name = "Offline Only (No Online Map)", Url = "" });
+            cmbProvider.Items.Add(new ProviderItem { Name = "Govmap (Hebrew)", Url = "https://cdnil.govmap.gov.il/xyz/heb/{z}/{x}/{y}.png" });
+            cmbProvider.Items.Add(new ProviderItem { Name = "Govmap (English)", Url = "https://cdnil.govmap.gov.il/xyz/eng/{z}/{x}/{y}.png" });
+            cmbProvider.Items.Add(new ProviderItem { Name = "Israel Hiking (Hebrew)", Url = "https://israelhiking.osm.org.il/Hebrew/Tiles/{z}/{x}/{y}.png" });
+            cmbProvider.Items.Add(new ProviderItem { Name = "Israel Hiking (English)", Url = "https://israelhiking.osm.org.il/English/Tiles/{z}/{x}/{y}.png" });
             cmbProvider.Items.Add(new ProviderItem { Name = "Google Map", Url = "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" });
             cmbProvider.Items.Add(new ProviderItem { Name = "Google Satellite", Url = "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}" });
             cmbProvider.Items.Add(new ProviderItem { Name = "Google Hybrid", Url = "https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}" });
