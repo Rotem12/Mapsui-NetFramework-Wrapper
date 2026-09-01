@@ -72,6 +72,7 @@ namespace PelcoControlNM
 
         MacroTooltipController tooltip = new MacroTooltipController();
         private FloatingTooltipForm _floatingTooltip;
+        private ContextMenuStrip _styleContextMenu;
         private CancellationTokenSource cts;
         private DateTime startTime;
 
@@ -123,10 +124,16 @@ namespace PelcoControlNM
                 panel1.Visible = false;
             }
 
-            // 1. Initialize Interactive Right-Click Context Menu Action Panel
+            // 1. Attach Right-Click Context Menu if available on form
+            if (this.contextMenuStrip1 != null)
+            {
+                map.ContextMenuStrip = this.contextMenuStrip1;
+            }
+
+            // 2. Initialize Interactive Right-Click Context Menu Action Panel
             InitializeActionContextMenu();
 
-            // 2. Configure the top on-screen crosshair button to smoothly center on the camera position
+            // 3. Configure the top on-screen crosshair button to smoothly center on the camera position
             map.CustomHomeAction = async () =>
             {
                 await Center();
@@ -143,15 +150,15 @@ namespace PelcoControlNM
                 }
             };
 
-            // 3. Configure the bottom-left style button to open the map & marker styling popup menu
+            // 4. Configure the bottom-left style button to open the map & marker styling popup menu
             map.StyleButtonClicked += (s, e) =>
             {
-                if (this.contextMenuStrip1 != null && !this.contextMenuStrip1.IsDisposed)
+                if (_styleContextMenu != null && !_styleContextMenu.IsDisposed)
                 {
                     _floatingTooltip?.Hide();
                     Point screenPt = map.PointToScreen(new Point(10, map.Height - 46));
                     Point formPt = this.PointToClient(screenPt);
-                    this.contextMenuStrip1.Show(this, formPt, ToolStripDropDownDirection.AboveRight);
+                    _styleContextMenu.Show(this, formPt, ToolStripDropDownDirection.AboveRight);
                 }
             };
 
@@ -186,7 +193,7 @@ namespace PelcoControlNM
         private void MapPanel_PointerMoved(object sender, MapPointerMovedEvent e)
         {
             if (IsDisposed) return;
-            if (contextMenuStrip1 != null && contextMenuStrip1.Visible)
+            if ((_styleContextMenu != null && _styleContextMenu.Visible) || (contextMenuStrip1 != null && contextMenuStrip1.Visible))
             {
                 _floatingTooltip?.Hide();
                 return;
@@ -322,7 +329,10 @@ namespace PelcoControlNM
 
         private async void LoadSettings()
         {
-            XmlLoader xml = new XmlLoader(PelcoControl.DirectoryPath + PelcoControl.XMLName, true);
+            string xmlPath = !string.IsNullOrEmpty(PelcoControl.DirectoryPath)
+                ? Path.Combine(PelcoControl.DirectoryPath, PelcoControl.XMLName)
+                : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, PelcoControl.XMLName);
+            XmlLoader xml = new XmlLoader(xmlPath, true);
 
             int x = xml.Get("Map/Left", int.MinValue);
             int y = xml.Get("Map/Top", int.MinValue);
@@ -350,6 +360,7 @@ namespace PelcoControlNM
             Width = w;
             Height = h;
 
+            bool showDefault = false;
             string pos = xml.Get("Map/Position", "");
             if (!string.IsNullOrEmpty(pos))
             {
@@ -359,10 +370,17 @@ namespace PelcoControlNM
                     ddLatPos = parsedLat;
                     ddLonPos = parsedLon;
                 }
+                else
+                {
+                    showDefault = true;
+                }
+            }
+            else
+            {
+                showDefault = true;
             }
 
-            // Ensure coordinates are on land within Israel region
-            if (ddLatPos < 29.0 || ddLatPos > 34.0 || ddLonPos < 34.0 || ddLonPos > 36.0)
+            if (showDefault || (Math.Abs(ddLatPos) < 0.001 && Math.Abs(ddLonPos) < 0.001))
             {
                 ddLatPos = 31.7767;
                 ddLonPos = 35.2345;
@@ -371,7 +389,7 @@ namespace PelcoControlNM
             double zoom = xml.Get("Map/Zoom", 0d);
             if (zoom <= 0)
             {
-                zoom = 13.0;
+                zoom = GetZoomForRadiusKm(showDefault ? 235 : 5, ddLatPos);
             }
 
             zoom = MathE.Clamp(zoom, 2, 18);
@@ -442,44 +460,57 @@ namespace PelcoControlNM
 
         private void SaveSettings()
         {
-            XmlLoader xml = new XmlLoader(PelcoControl.DirectoryPath + PelcoControl.XMLName);
+            try
+            {
+                string xmlPath = !string.IsNullOrEmpty(PelcoControl.DirectoryPath)
+                    ? Path.Combine(PelcoControl.DirectoryPath, PelcoControl.XMLName)
+                    : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, PelcoControl.XMLName);
+                XmlLoader xml = new XmlLoader(xmlPath);
 
-            if (WindowState == FormWindowState.Normal)
-            {
-                xml.Set("Map/Left", Left);
-                xml.Set("Map/Top", Top);
-                xml.Set("Map/Width", Width);
-                xml.Set("Map/Height", Height);
-            }
-            else
-            {
-                xml.Set("Map/Left", RestoreBounds.Left);
-                xml.Set("Map/Top", RestoreBounds.Top);
-                xml.Set("Map/Width", RestoreBounds.Width);
-                xml.Set("Map/Height", RestoreBounds.Height);
-            }
+                if (WindowState == FormWindowState.Normal)
+                {
+                    xml.Set("Map/Left", Left);
+                    xml.Set("Map/Top", Top);
+                    xml.Set("Map/Width", Width);
+                    xml.Set("Map/Height", Height);
+                }
+                else
+                {
+                    xml.Set("Map/Left", RestoreBounds.Left);
+                    xml.Set("Map/Top", RestoreBounds.Top);
+                    xml.Set("Map/Width", RestoreBounds.Width);
+                    xml.Set("Map/Height", RestoreBounds.Height);
+                }
 
-            if (Math.Abs(_currentCenterLat) > 0.001 || Math.Abs(_currentCenterLon) > 0.001)
-            {
-                xml.Set("Map/Position", $"{_currentCenterLat},{_currentCenterLon}");
-            }
-            if (_currentZoom > 1)
-            {
-                xml.Set("Map/Zoom", _currentZoom);
-            }
+                if (Math.Abs(ddLatPos) > 0.001 || Math.Abs(ddLonPos) > 0.001)
+                {
+                    xml.Set("Map/Position", $"{ddLatPos:F6},{ddLonPos:F6}");
+                }
+                if (Math.Abs(_currentCenterLat) > 0.001 || Math.Abs(_currentCenterLon) > 0.001)
+                {
+                    xml.Set("Map/Center", $"{_currentCenterLat:F6},{_currentCenterLon:F6}");
+                }
+                if (_currentZoom > 1)
+                {
+                    xml.Set("Map/Zoom", _currentZoom);
+                }
 
-            xml.Save();
-            SaveStyleSettings();
+                xml.Save();
+                SaveStyleSettings();
+            }
+            catch
+            {
+            }
         }
 
         private void InitializeIconContextMenu()
         {
-            if (this.contextMenuStrip1 == null)
+            if (_styleContextMenu == null)
             {
-                this.contextMenuStrip1 = new ContextMenuStrip();
+                _styleContextMenu = new ContextMenuStrip();
             }
 
-            var menu = this.contextMenuStrip1;
+            var menu = _styleContextMenu;
             menu.Items.Clear();
 
             // 1. Target Icon Submenu
@@ -882,6 +913,7 @@ namespace PelcoControlNM
                         ddLonPos = ctx.Longitude;
                         SaveSettings();
                         await SetPosition(center: false);
+                        await Rotate();
                     }
                 });
             }
@@ -1222,15 +1254,15 @@ namespace PelcoControlNM
             double camAlt = (elevationManager != null ? elevationManager.GetElevation(ddLatPos, ddLonPos) : 0) + InstallHeight;
             var angles = GetAngles(ddLatPos, ddLonPos, camAlt, lastPoint.Lat, lastPoint.Lon, lastElevation);
 
-            parent.GotoDeg(angles.Bearing + parent.AzimuthOffset, angles.Pitch + parent.ElevationOffset, false);
+            parent?.GotoDeg(angles.Bearing + (parent != null ? parent.AzimuthOffset : 0), angles.Pitch + (parent != null ? parent.ElevationOffset : 0), false);
         }
 
         private void miGotoNoElevation_Click(object sender, EventArgs e)
         {
             var bearing = CalculateBearing(ddLatPos, ddLonPos, lastPoint.Lat, lastPoint.Lon);
-            double cameraAngle = (bearing + parent.AzimuthOffset + 360) % 360;
+            double cameraAngle = (bearing + (parent != null ? parent.AzimuthOffset : 0) + 360) % 360;
 
-            parent.GotoDeg(cameraAngle, parent.CurrentTilt, false);
+            parent?.GotoDeg(cameraAngle, parent != null ? parent.CurrentTilt : 0, false);
         }
 
         public static double CalculateBearing(double lat1, double lon1, double lat2, double lon2)

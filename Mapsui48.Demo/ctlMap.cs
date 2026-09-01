@@ -85,6 +85,7 @@ namespace PelcoControlNM
 
         MacroTooltipController tooltip = new MacroTooltipController();
         private FloatingTooltipForm _floatingTooltip;
+        private ContextMenuStrip _styleContextMenu;
         private CancellationTokenSource cts;
         private DateTime startTime;
 
@@ -192,10 +193,16 @@ namespace PelcoControlNM
                 panel1.Visible = false;
             }
 
-            // 1. Initialize Interactive Right-Click Context Menu Action Panel
+            // 1. Attach Right-Click Context Menu if available on control
+            if (this.contextMenuStrip1 != null)
+            {
+                map.ContextMenuStrip = this.contextMenuStrip1;
+            }
+
+            // 2. Initialize Interactive Right-Click Context Menu Action Panel
             InitializeActionContextMenu();
 
-            // 2. Configure the top on-screen crosshair button to smoothly center on the camera position
+            // 3. Configure the top on-screen crosshair button to smoothly center on the camera position
             map.CustomHomeAction = async () =>
             {
                 await Center();
@@ -212,15 +219,15 @@ namespace PelcoControlNM
                 }
             };
 
-            // 3. Configure the bottom-left style button to open the map & marker styling popup menu
+            // 4. Configure the bottom-left style button to open the map & marker styling popup menu
             map.StyleButtonClicked += (s, e) =>
             {
-                if (this.contextMenuStrip1 != null && !this.contextMenuStrip1.IsDisposed)
+                if (_styleContextMenu != null && !_styleContextMenu.IsDisposed)
                 {
                     _floatingTooltip?.Hide();
                     Point screenPt = map.PointToScreen(new Point(10, map.Height - 46));
                     Point ctrlPt = this.PointToClient(screenPt);
-                    this.contextMenuStrip1.Show(this, ctrlPt, ToolStripDropDownDirection.AboveRight);
+                    _styleContextMenu.Show(this, ctrlPt, ToolStripDropDownDirection.AboveRight);
                 }
             };
 
@@ -291,7 +298,7 @@ namespace PelcoControlNM
         private void MapPanel_PointerMoved(object sender, MapPointerMovedEvent e)
         {
             if (IsDisposed) return;
-            if (contextMenuStrip1 != null && contextMenuStrip1.Visible)
+            if ((_styleContextMenu != null && _styleContextMenu.Visible) || (contextMenuStrip1 != null && contextMenuStrip1.Visible))
             {
                 _floatingTooltip?.Hide();
                 return;
@@ -366,8 +373,12 @@ namespace PelcoControlNM
         {
             try
             {
-                XmlLoader xml = new XmlLoader(PelcoControl.DirectoryPath + PelcoControl.XMLName, true);
+                string xmlPath = !string.IsNullOrEmpty(PelcoControl.DirectoryPath)
+                    ? Path.Combine(PelcoControl.DirectoryPath, PelcoControl.XMLName)
+                    : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, PelcoControl.XMLName);
+                XmlLoader xml = new XmlLoader(xmlPath, true);
 
+                bool showDefault = false;
                 string pos = xml.Get("Map/Position", "");
                 if (!string.IsNullOrEmpty(pos))
                 {
@@ -377,10 +388,17 @@ namespace PelcoControlNM
                         ddLatPos = parsedLat;
                         ddLonPos = parsedLon;
                     }
+                    else
+                    {
+                        showDefault = true;
+                    }
+                }
+                else
+                {
+                    showDefault = true;
                 }
 
-                // Ensure coordinates are on land within Israel region
-                if (ddLatPos < 29.0 || ddLatPos > 34.0 || ddLonPos < 34.0 || ddLonPos > 36.0)
+                if (showDefault || (Math.Abs(ddLatPos) < 0.001 && Math.Abs(ddLonPos) < 0.001))
                 {
                     ddLatPos = 31.7767;
                     ddLonPos = 35.2345;
@@ -389,7 +407,7 @@ namespace PelcoControlNM
                 double zoom = xml.Get("Map/Zoom", 0d);
                 if (zoom <= 0)
                 {
-                    zoom = 13.0;
+                    zoom = GetZoomForRadiusKm(showDefault ? 235 : 5, ddLatPos);
                 }
 
                 zoom = MathE.Clamp(zoom, 2, 18);
@@ -476,11 +494,18 @@ namespace PelcoControlNM
         {
             try
             {
-                XmlLoader xml = new XmlLoader(PelcoControl.DirectoryPath + PelcoControl.XMLName);
+                string xmlPath = !string.IsNullOrEmpty(PelcoControl.DirectoryPath)
+                    ? Path.Combine(PelcoControl.DirectoryPath, PelcoControl.XMLName)
+                    : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, PelcoControl.XMLName);
+                XmlLoader xml = new XmlLoader(xmlPath);
 
+                if (Math.Abs(ddLatPos) > 0.001 || Math.Abs(ddLonPos) > 0.001)
+                {
+                    xml.Set("Map/Position", $"{ddLatPos:F6},{ddLonPos:F6}");
+                }
                 if (Math.Abs(_currentCenterLat) > 0.001 || Math.Abs(_currentCenterLon) > 0.001)
                 {
-                    xml.Set("Map/Position", $"{_currentCenterLat},{_currentCenterLon}");
+                    xml.Set("Map/Center", $"{_currentCenterLat:F6},{_currentCenterLon:F6}");
                 }
                 if (_currentZoom > 1)
                 {
@@ -495,12 +520,12 @@ namespace PelcoControlNM
 
         private void InitializeIconContextMenu()
         {
-            if (this.contextMenuStrip1 == null)
+            if (_styleContextMenu == null)
             {
-                this.contextMenuStrip1 = new ContextMenuStrip();
+                _styleContextMenu = new ContextMenuStrip();
             }
 
-            var menu = this.contextMenuStrip1;
+            var menu = _styleContextMenu;
             menu.Items.Clear();
 
             // 1. Target Icon Submenu
@@ -903,6 +928,7 @@ namespace PelcoControlNM
                         ddLonPos = ctx.Longitude;
                         SaveSettings();
                         await SetPosition(center: false);
+                        await Rotate();
                     }
                 });
             }
