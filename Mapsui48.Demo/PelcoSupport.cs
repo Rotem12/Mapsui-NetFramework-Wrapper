@@ -21,23 +21,9 @@ namespace PelcoControlNM
         public static string DirectoryPath { get; set; } = AppDomain.CurrentDomain.BaseDirectory;
         public static string XMLName { get; set; } = "PelcoControl.xml";
 
-        private double _latitude = 31.7767;  // Default: Jerusalem / Israel region
-        private double _longitude = 35.2345;
         private double _pan = 45.0;          // 45 degrees NE
         private double _tilt = -8.0;         // -8 degrees down
         private double _zoom = 25.0;         // 25 degrees horizontal FOV
-
-        public double Latitude
-        {
-            get => _latitude;
-            set { _latitude = value; PositionChanged?.Invoke(this, EventArgs.Empty); }
-        }
-
-        public double Longitude
-        {
-            get => _longitude;
-            set { _longitude = value; PositionChanged?.Invoke(this, EventArgs.Empty); }
-        }
 
         public double CurrentPanNorthed
         {
@@ -60,7 +46,6 @@ namespace PelcoControlNM
         public double AzimuthOffset { get; set; } = 0;
         public double ElevationOffset { get; set; } = 0;
 
-        public event EventHandler PositionChanged;
         public event EventHandler PanChanged;
         public event EventHandler TiltChanged;
         public event EventHandler ZoomChanged;
@@ -390,83 +375,5 @@ namespace PelcoControlNM
         public void SetText(Control ctrl, string text)
         {
         }
-    }
-
-    /// <summary>
-    /// Lightweight non-activating floating tooltip window that renders above all Win32 and OpenGL child surfaces.
-    /// </summary>
-    internal class FloatingTooltipForm : Form
-    {
-        private readonly Label _lblText;
-
-        public FloatingTooltipForm()
-        {
-            FormBorderStyle = FormBorderStyle.None;
-            StartPosition = FormStartPosition.Manual;
-            ShowInTaskbar = false;
-            BackColor = Color.FromArgb(20, 20, 20);
-            TopMost = true;
-            AutoSize = true;
-            AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            Padding = new Padding(1);
-
-            _lblText = new Label
-            {
-                AutoSize = true,
-                BackColor = Color.FromArgb(30, 30, 30),
-                ForeColor = Color.FromArgb(0, 229, 255),
-                Font = new Font("Consolas", 9.5f, FontStyle.Bold),
-                Padding = new Padding(6, 4, 6, 4),
-                Margin = new Padding(0)
-            };
-            Controls.Add(_lblText);
-        }
-
-        protected override bool ShowWithoutActivation => true;
-
-        protected override CreateParams CreateParams
-        {
-            get
-            {
-                var cp = base.CreateParams;
-                cp.ExStyle |= 0x08000000 | 0x00000080 | 0x00000020; // WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT
-                return cp;
-            }
-        }
-
-        public void UpdateTooltip(string text, Point screenPoint)
-        {
-            _lblText.Text = text;
-            Location = new Point(screenPoint.X + 16, screenPoint.Y + 16);
-            if (!Visible)
-            {
-                Show();
-            }
-        }
-    }
-
-    internal class DimGrayColorTable : ProfessionalColorTable
-    {
-        public override Color MenuBorder => Color.FromArgb(200, 255, 255, 255);
-        public override Color MenuItemBorder => Color.FromArgb(160, 255, 255, 255);
-        public override Color MenuItemSelected => Color.FromArgb(135, 135, 135);
-        public override Color MenuItemSelectedGradientBegin => Color.FromArgb(135, 135, 135);
-        public override Color MenuItemSelectedGradientEnd => Color.FromArgb(135, 135, 135);
-        public override Color MenuItemPressedGradientBegin => Color.FromArgb(90, 90, 90);
-        public override Color MenuItemPressedGradientMiddle => Color.FromArgb(90, 90, 90);
-        public override Color MenuItemPressedGradientEnd => Color.FromArgb(90, 90, 90);
-        public override Color ToolStripDropDownBackground => Color.DimGray;
-        public override Color ImageMarginGradientBegin => Color.DimGray;
-        public override Color ImageMarginGradientMiddle => Color.DimGray;
-        public override Color ImageMarginGradientEnd => Color.DimGray;
-        public override Color SeparatorDark => Color.FromArgb(60, 60, 60);
-        public override Color SeparatorLight => Color.FromArgb(140, 140, 140);
-        public override Color CheckBackground => Color.FromArgb(120, 120, 120);
-        public override Color CheckSelectedBackground => Color.FromArgb(140, 140, 140);
-        public override Color CheckPressedBackground => Color.FromArgb(90, 90, 90);
-        public override Color ButtonSelectedHighlight => Color.FromArgb(135, 135, 135);
-        public override Color ButtonSelectedHighlightBorder => Color.FromArgb(150, 150, 150);
-        public override Color ButtonPressedHighlight => Color.FromArgb(90, 90, 90);
-        public override Color ButtonPressedHighlightBorder => Color.FromArgb(150, 150, 150);
     }
 }

@@ -87,24 +87,6 @@ namespace PelcoControlNM
             parent = pelco;
             if (parent != null)
             {
-                if (Math.Abs(parent.Latitude) > 0.001 || Math.Abs(parent.Longitude) > 0.001)
-                {
-                    ddLatPos = parent.Latitude;
-                    ddLonPos = parent.Longitude;
-                }
-                parent.PositionChanged += async (s, e) =>
-                {
-                    if (!IsDisposed && IsHandleCreated)
-                    {
-                        ddLatPos = parent.Latitude;
-                        ddLonPos = parent.Longitude;
-                        await Rotate();
-                        if (FollowCamera)
-                        {
-                            await map.NavigateToAsync(ddLatPos, ddLonPos, _currentZoom);
-                        }
-                    }
-                };
                 parent.PanChanged += async (s, e) =>
                 {
                     if (!IsDisposed && IsHandleCreated) await Rotate();
@@ -368,23 +350,14 @@ namespace PelcoControlNM
             Width = w;
             Height = h;
 
-            bool showDefault = false;
-            if (parent != null && (Math.Abs(parent.Latitude) > 0.001 || Math.Abs(parent.Longitude) > 0.001))
+            string pos = xml.Get("Map/Position", "");
+            if (!string.IsNullOrEmpty(pos))
             {
-                ddLatPos = parent.Latitude;
-                ddLonPos = parent.Longitude;
-            }
-            else
-            {
-                string pos = xml.Get("Map/Position", "");
-                if (!string.IsNullOrEmpty(pos))
+                string[] p = pos.Split(',');
+                if (p.Length >= 2 && double.TryParse(p[0], out double parsedLat) && double.TryParse(p[1], out double parsedLon) && (Math.Abs(parsedLat) > 0.001 || Math.Abs(parsedLon) > 0.001))
                 {
-                    string[] p = pos.Split(',');
-                    if (p.Length >= 2 && double.TryParse(p[0], out double parsedLat) && double.TryParse(p[1], out double parsedLon) && (Math.Abs(parsedLat) > 0.001 || Math.Abs(parsedLon) > 0.001))
-                    {
-                        ddLatPos = parsedLat;
-                        ddLonPos = parsedLon;
-                    }
+                    ddLatPos = parsedLat;
+                    ddLonPos = parsedLon;
                 }
             }
 
@@ -1474,5 +1447,87 @@ namespace PelcoControlNM
 
             return (lat2 * 180.0 / Math.PI, lon2 * 180.0 / Math.PI);
         }
+
+        #region Standalone Nested UI Components
+
+        /// <summary>
+        /// Lightweight non-activating floating tooltip window that renders above all Win32 and OpenGL child surfaces.
+        /// </summary>
+        private class FloatingTooltipForm : Form
+        {
+            private readonly Label _lblText;
+
+            public FloatingTooltipForm()
+            {
+                FormBorderStyle = FormBorderStyle.None;
+                StartPosition = FormStartPosition.Manual;
+                ShowInTaskbar = false;
+                BackColor = Color.FromArgb(20, 20, 20);
+                TopMost = true;
+                AutoSize = true;
+                AutoSizeMode = AutoSizeMode.GrowAndShrink;
+                Padding = new Padding(1);
+
+                _lblText = new Label
+                {
+                    AutoSize = true,
+                    BackColor = Color.FromArgb(30, 30, 30),
+                    ForeColor = Color.FromArgb(0, 229, 255),
+                    Font = new Font("Consolas", 9.5f, FontStyle.Bold),
+                    Padding = new Padding(6, 4, 6, 4),
+                    Margin = new Padding(0)
+                };
+                Controls.Add(_lblText);
+            }
+
+            protected override bool ShowWithoutActivation => true;
+
+            protected override CreateParams CreateParams
+            {
+                get
+                {
+                    var cp = base.CreateParams;
+                    cp.ExStyle |= 0x08000000 | 0x00000080 | 0x00000020; // WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT
+                    return cp;
+                }
+            }
+
+            public void UpdateTooltip(string text, Point screenPoint)
+            {
+                _lblText.Text = text;
+                Location = new Point(screenPoint.X + 16, screenPoint.Y + 16);
+                if (!Visible)
+                {
+                    Show();
+                }
+            }
+        }
+
+        private class DimGrayColorTable : ProfessionalColorTable
+        {
+            public override Color MenuBorder => Color.FromArgb(200, 255, 255, 255);
+            public override Color MenuItemBorder => Color.FromArgb(160, 255, 255, 255);
+            public override Color MenuItemSelected => Color.FromArgb(135, 135, 135);
+            public override Color MenuItemSelectedGradientBegin => Color.FromArgb(135, 135, 135);
+            public override Color MenuItemSelectedGradientEnd => Color.FromArgb(135, 135, 135);
+            public override Color MenuItemPressedGradientBegin => Color.FromArgb(90, 90, 90);
+            public override Color MenuItemPressedGradientMiddle => Color.FromArgb(90, 90, 90);
+            public override Color MenuItemPressedGradientEnd => Color.FromArgb(90, 90, 90);
+            public override Color ToolStripDropDownBackground => Color.DimGray;
+            public override Color ImageMarginGradientBegin => Color.DimGray;
+            public override Color ImageMarginGradientMiddle => Color.DimGray;
+            public override Color ImageMarginGradientEnd => Color.DimGray;
+            public override Color SeparatorDark => Color.FromArgb(60, 60, 60);
+            public override Color SeparatorLight => Color.FromArgb(140, 140, 140);
+            public override Color CheckBackground => Color.FromArgb(120, 120, 120);
+            public override Color CheckSelectedBackground => Color.FromArgb(140, 140, 140);
+            public override Color CheckPressedBackground => Color.FromArgb(90, 90, 90);
+            public override Color ButtonSelectedHighlight => Color.FromArgb(135, 135, 135);
+            public override Color ButtonSelectedHighlightBorder => Color.FromArgb(150, 150, 150);
+            public override Color ButtonPressedHighlight => Color.FromArgb(90, 90, 90);
+            public override Color ButtonPressedHighlightBorder => Color.FromArgb(150, 150, 150);
+        }
+
+        #endregion
     }
 }

@@ -213,8 +213,6 @@ namespace PelcoControlNM
             }
 
             // Update the Pelco state model
-            _pelco.Latitude = lat;
-            _pelco.Longitude = lon;
             _pelco.CurrentPanNorthed = pan;
             _pelco.CurrentTilt = tilt;
             _pelco.CurrentZoom = zoom;

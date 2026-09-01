@@ -19,6 +19,8 @@ namespace Mapsui48.Demo
         private frmMap _frmMapInstance;
         private TelemetrySimulator _simulator;
         private ElevationManager _elevationManager;
+        private double _camLat = 31.7767;
+        private double _camLon = 35.2345;
 
         public double InstallHeight { get; set; } = 15;
 
@@ -60,8 +62,8 @@ namespace Mapsui48.Demo
             // Navigate directly to land on startup (Jerusalem region) and render initial camera marker & vision cone
             _mapPanel.HostReady += async (s, e) =>
             {
-                await _mapPanel.NavigateToAsync(_pelco.Latitude, _pelco.Longitude, zoom: 12);
-                await UpdateMainFormCameraDisplay(_pelco.Latitude, _pelco.Longitude, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, 15.0);
+                await _mapPanel.NavigateToAsync(_camLat, _camLon, zoom: 12);
+                await UpdateMainFormCameraDisplay(_camLat, _camLon, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, 15.0);
             };
 
             // Hook live PointerMoved and PointerLeft events for the Custom Tooltip Test
@@ -459,7 +461,7 @@ namespace Mapsui48.Demo
                     _frmMapInstance.InstallHeight = (int)numElev.Value;
                     _ = _frmMapInstance.Rotate();
                 }
-                await UpdateMainFormCameraDisplay(_pelco.Latitude, _pelco.Longitude, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, (double)numElev.Value);
+                await UpdateMainFormCameraDisplay(_camLat, _camLon, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, (double)numElev.Value);
             };
 
             numPan.ValueChanged += (s, e) => updateCamera();
@@ -477,7 +479,7 @@ namespace Mapsui48.Demo
                     numPan.Value = (decimal)Math.Round(pan, 1);
                     numTilt.Value = (decimal)Math.Round(tilt, 1);
                     lblPelcoStatus.Text = $"[Goto Received] Pan={pan:F1}°, Tilt={tilt:F1}° (Fast={sendFast})";
-                    await UpdateMainFormCameraDisplay(_pelco.Latitude, _pelco.Longitude, pan, tilt, (double)numZoom.Value, (double)numElev.Value);
+                    await UpdateMainFormCameraDisplay(_camLat, _camLon, pan, tilt, (double)numZoom.Value, (double)numElev.Value);
                 });
             };
 
@@ -709,7 +711,7 @@ namespace Mapsui48.Demo
                 {
                     _cameraIconType = (string)item.Tag;
                     lblStatus.Text = $"Camera icon set to: {icon.Name}";
-                    await UpdateMainFormCameraDisplay(_pelco.Latitude, _pelco.Longitude, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
+                    await UpdateMainFormCameraDisplay(_camLat, _camLon, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
                 };
                 miCameraIcon.DropDownItems.Add(item);
             }
@@ -724,7 +726,7 @@ namespace Mapsui48.Demo
                 {
                     _cameraColor = (string)item.Tag;
                     lblStatus.Text = $"Camera color set to: {color.Name}";
-                    await UpdateMainFormCameraDisplay(_pelco.Latitude, _pelco.Longitude, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
+                    await UpdateMainFormCameraDisplay(_camLat, _camLon, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
                 };
                 miCameraColor.DropDownItems.Add(item);
             }
@@ -824,12 +826,12 @@ namespace Mapsui48.Demo
                     var target = targetHit.Value.Info;
                     if (_pelco != null)
                     {
-                        var bearing = CalculateBearing(_pelco.Latitude, _pelco.Longitude, target.Lat, target.Lon);
+                        var bearing = CalculateBearing(_camLat, _camLon, target.Lat, target.Lon);
                         double cameraAngle = (bearing + _pelco.AzimuthOffset + 360) % 360;
 
                         _pelco.GotoDeg(cameraAngle, _pelco.CurrentTilt, false);
                         lblStatus.Text = $"Action: Left-Click Goto '{targetName}' Bearing only ({cameraAngle:F1}°)";
-                        await UpdateMainFormCameraDisplay(_pelco.Latitude, _pelco.Longitude, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
+                        await UpdateMainFormCameraDisplay(_camLat, _camLon, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
                     }
                     return;
                 }
@@ -869,7 +871,7 @@ namespace Mapsui48.Demo
         {
             try
             {
-                await AddTargetAt(_pelco.Latitude + 0.005, _pelco.Longitude + 0.005);
+                await AddTargetAt(_camLat + 0.005, _camLon + 0.005);
             }
             catch (Exception ex)
             {
@@ -1133,12 +1135,12 @@ namespace Mapsui48.Demo
                     OnClick = async (ctx) =>
                     {
                         double tgtElev = _elevationManager != null ? _elevationManager.GetElevation(target.Lat, target.Lon) : 0;
-                        double camAlt = (_elevationManager != null ? _elevationManager.GetElevation(_pelco.Latitude, _pelco.Longitude) : 0) + InstallHeight;
-                        var angles = GetAngles(_pelco.Latitude, _pelco.Longitude, camAlt, target.Lat, target.Lon, tgtElev);
+                        double camAlt = (_elevationManager != null ? _elevationManager.GetElevation(_camLat, _camLon) : 0) + InstallHeight;
+                        var angles = GetAngles(_camLat, _camLon, camAlt, target.Lat, target.Lon, tgtElev);
 
                         _pelco.GotoDeg(angles.Bearing + _pelco.AzimuthOffset, angles.Pitch + _pelco.ElevationOffset, false);
                         lblStatus.Text = $"Action: Goto '{targetName}' (Bearing: {angles.Bearing:F1}°, Pitch: {angles.Pitch:F1}°)";
-                        await UpdateMainFormCameraDisplay(_pelco.Latitude, _pelco.Longitude, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
+                        await UpdateMainFormCameraDisplay(_camLat, _camLon, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
                     }
                 });
 
@@ -1152,12 +1154,12 @@ namespace Mapsui48.Demo
                     AccentColor = Color.FromArgb(245, 158, 11), // Amber
                     OnClick = async (ctx) =>
                     {
-                        var bearing = CalculateBearing(_pelco.Latitude, _pelco.Longitude, target.Lat, target.Lon);
+                        var bearing = CalculateBearing(_camLat, _camLon, target.Lat, target.Lon);
                         double cameraAngle = (bearing + _pelco.AzimuthOffset + 360) % 360;
 
                         _pelco.GotoDeg(cameraAngle, _pelco.CurrentTilt, false);
                         lblStatus.Text = $"Action: Goto '{targetName}' Bearing only ({cameraAngle:F1}°)";
-                        await UpdateMainFormCameraDisplay(_pelco.Latitude, _pelco.Longitude, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
+                        await UpdateMainFormCameraDisplay(_camLat, _camLon, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
                     }
                 });
 
@@ -1207,12 +1209,12 @@ namespace Mapsui48.Demo
                     OnClick = async (ctx) =>
                     {
                         double tgtElev = _elevationManager != null ? _elevationManager.GetElevation(ctx.Latitude, ctx.Longitude) : 0;
-                        double camAlt = (_elevationManager != null ? _elevationManager.GetElevation(_pelco.Latitude, _pelco.Longitude) : 0) + InstallHeight;
-                        var angles = GetAngles(_pelco.Latitude, _pelco.Longitude, camAlt, ctx.Latitude, ctx.Longitude, tgtElev);
+                        double camAlt = (_elevationManager != null ? _elevationManager.GetElevation(_camLat, _camLon) : 0) + InstallHeight;
+                        var angles = GetAngles(_camLat, _camLon, camAlt, ctx.Latitude, ctx.Longitude, tgtElev);
 
                         _pelco.GotoDeg(angles.Bearing + _pelco.AzimuthOffset, angles.Pitch + _pelco.ElevationOffset, false);
                         lblStatus.Text = $"Action: Goto ({ctx.Latitude:F5}, {ctx.Longitude:F5}) with Elevation (Bearing: {angles.Bearing:F1}°, Pitch: {angles.Pitch:F1}°)";
-                        await UpdateMainFormCameraDisplay(_pelco.Latitude, _pelco.Longitude, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
+                        await UpdateMainFormCameraDisplay(_camLat, _camLon, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
                     }
                 });
 
@@ -1226,12 +1228,12 @@ namespace Mapsui48.Demo
                     AccentColor = Color.FromArgb(245, 158, 11), // Amber
                     OnClick = async (ctx) =>
                     {
-                        var bearing = CalculateBearing(_pelco.Latitude, _pelco.Longitude, ctx.Latitude, ctx.Longitude);
+                        var bearing = CalculateBearing(_camLat, _camLon, ctx.Latitude, ctx.Longitude);
                         double cameraAngle = (bearing + _pelco.AzimuthOffset + 360) % 360;
 
                         _pelco.GotoDeg(cameraAngle, _pelco.CurrentTilt, false);
                         lblStatus.Text = $"Action: Goto ({ctx.Latitude:F5}, {ctx.Longitude:F5}) Bearing only ({cameraAngle:F1}°)";
-                        await UpdateMainFormCameraDisplay(_pelco.Latitude, _pelco.Longitude, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
+                        await UpdateMainFormCameraDisplay(_camLat, _camLon, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
                     }
                 });
 
@@ -1259,13 +1261,95 @@ namespace Mapsui48.Demo
                     AccentColor = Color.FromArgb(34, 197, 94), // Green
                     OnClick = async (ctx) =>
                     {
-                        _pelco.Latitude = ctx.Latitude;
-                        _pelco.Longitude = ctx.Longitude;
+                        _camLat = ctx.Latitude;
+                        _camLon = ctx.Longitude;
                         lblStatus.Text = $"Camera origin relocated to {ctx.Latitude:F5}, {ctx.Longitude:F5}";
-                        await UpdateMainFormCameraDisplay(_pelco.Latitude, _pelco.Longitude, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
+                        await UpdateMainFormCameraDisplay(_camLat, _camLon, _pelco.CurrentPanNorthed, _pelco.CurrentTilt, _pelco.CurrentZoom, InstallHeight);
                     }
                 });
             }
         }
+
+        #region Standalone Nested UI Components
+
+        /// <summary>
+        /// Lightweight non-activating floating tooltip window that renders above all Win32 and OpenGL child surfaces.
+        /// </summary>
+        private class FloatingTooltipForm : Form
+        {
+            private readonly Label _lblText;
+
+            public FloatingTooltipForm()
+            {
+                FormBorderStyle = FormBorderStyle.None;
+                StartPosition = FormStartPosition.Manual;
+                ShowInTaskbar = false;
+                BackColor = Color.FromArgb(20, 20, 20);
+                TopMost = true;
+                AutoSize = true;
+                AutoSizeMode = AutoSizeMode.GrowAndShrink;
+                Padding = new Padding(1);
+
+                _lblText = new Label
+                {
+                    AutoSize = true,
+                    BackColor = Color.FromArgb(30, 30, 30),
+                    ForeColor = Color.FromArgb(0, 229, 255),
+                    Font = new Font("Consolas", 9.5f, FontStyle.Bold),
+                    Padding = new Padding(6, 4, 6, 4),
+                    Margin = new Padding(0)
+                };
+                Controls.Add(_lblText);
+            }
+
+            protected override bool ShowWithoutActivation => true;
+
+            protected override CreateParams CreateParams
+            {
+                get
+                {
+                    var cp = base.CreateParams;
+                    cp.ExStyle |= 0x08000000 | 0x00000080 | 0x00000020; // WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT
+                    return cp;
+                }
+            }
+
+            public void UpdateTooltip(string text, Point screenPoint)
+            {
+                _lblText.Text = text;
+                Location = new Point(screenPoint.X + 16, screenPoint.Y + 16);
+                if (!Visible)
+                {
+                    Show();
+                }
+            }
+        }
+
+        private class DimGrayColorTable : ProfessionalColorTable
+        {
+            public override Color MenuBorder => Color.FromArgb(200, 255, 255, 255);
+            public override Color MenuItemBorder => Color.FromArgb(160, 255, 255, 255);
+            public override Color MenuItemSelected => Color.FromArgb(135, 135, 135);
+            public override Color MenuItemSelectedGradientBegin => Color.FromArgb(135, 135, 135);
+            public override Color MenuItemSelectedGradientEnd => Color.FromArgb(135, 135, 135);
+            public override Color MenuItemPressedGradientBegin => Color.FromArgb(90, 90, 90);
+            public override Color MenuItemPressedGradientMiddle => Color.FromArgb(90, 90, 90);
+            public override Color MenuItemPressedGradientEnd => Color.FromArgb(90, 90, 90);
+            public override Color ToolStripDropDownBackground => Color.DimGray;
+            public override Color ImageMarginGradientBegin => Color.DimGray;
+            public override Color ImageMarginGradientMiddle => Color.DimGray;
+            public override Color ImageMarginGradientEnd => Color.DimGray;
+            public override Color SeparatorDark => Color.FromArgb(60, 60, 60);
+            public override Color SeparatorLight => Color.FromArgb(140, 140, 140);
+            public override Color CheckBackground => Color.FromArgb(120, 120, 120);
+            public override Color CheckSelectedBackground => Color.FromArgb(140, 140, 140);
+            public override Color CheckPressedBackground => Color.FromArgb(90, 90, 90);
+            public override Color ButtonSelectedHighlight => Color.FromArgb(135, 135, 135);
+            public override Color ButtonSelectedHighlightBorder => Color.FromArgb(150, 150, 150);
+            public override Color ButtonPressedHighlight => Color.FromArgb(90, 90, 90);
+            public override Color ButtonPressedHighlightBorder => Color.FromArgb(150, 150, 150);
+        }
+
+        #endregion
     }
 }
