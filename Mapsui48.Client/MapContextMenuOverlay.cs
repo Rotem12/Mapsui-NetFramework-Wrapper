@@ -12,12 +12,14 @@ namespace Mapsui48.Client
     /// Interactive tactical HUD context action panel displayed directly on the map upon right-click.
     /// Hosts customizable buttons with real-time looping icon animations and custom floating tooltips.
     /// </summary>
-    public class MapContextMenuOverlay : Form
+    public class MapContextMenuOverlay : Form, IMessageFilter
     {
         private readonly MapHostPanel _parentPanel;
         private readonly List<MapContextMenuItem> _items = new List<MapContextMenuItem>();
         private readonly MapCustomTooltipForm _tooltipForm;
         private readonly Timer _animTimer;
+        private Form _hookedForm;
+        private bool _filterInstalled;
 
         private float _animPhase = 0f;
         private int _hoverIndex = -1;
@@ -90,15 +92,84 @@ namespace Mapsui48.Client
         private void HookParentForm()
         {
             var form = _parentPanel.FindForm();
-            if (form != null)
+            if (form != null && form != _hookedForm)
             {
-                form.Deactivate -= ParentForm_Deactivate;
-                form.Deactivate += ParentForm_Deactivate;
-                form.LocationChanged -= ParentForm_Moved;
-                form.LocationChanged += ParentForm_Moved;
-                form.SizeChanged -= ParentForm_Moved;
-                form.SizeChanged += ParentForm_Moved;
+                UnhookParentForm();
+                _hookedForm = form;
+                _hookedForm.Deactivate += ParentForm_Deactivate;
+                _hookedForm.LocationChanged += ParentForm_Moved;
+                _hookedForm.SizeChanged += ParentForm_Moved;
             }
+        }
+
+        private void UnhookParentForm()
+        {
+            if (_hookedForm != null)
+            {
+                _hookedForm.Deactivate -= ParentForm_Deactivate;
+                _hookedForm.LocationChanged -= ParentForm_Moved;
+                _hookedForm.SizeChanged -= ParentForm_Moved;
+                _hookedForm = null;
+            }
+        }
+
+        private void InstallMessageFilter()
+        {
+            if (!_filterInstalled)
+            {
+                Application.AddMessageFilter(this);
+                _filterInstalled = true;
+            }
+        }
+
+        private void RemoveMessageFilter()
+        {
+            if (_filterInstalled)
+            {
+                Application.RemoveMessageFilter(this);
+                _filterInstalled = false;
+            }
+        }
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (!this.Visible || this.IsDisposed) return false;
+
+            const int WM_LBUTTONDOWN = 0x0201;
+            const int WM_RBUTTONDOWN = 0x0204;
+            const int WM_MBUTTONDOWN = 0x0207;
+            const int WM_NCLBUTTONDOWN = 0x00A1;
+            const int WM_NCRBUTTONDOWN = 0x00A4;
+            const int WM_NCMBUTTONDOWN = 0x00A7;
+            const int WM_KEYDOWN = 0x0100;
+            const int WM_ACTIVATEAPP = 0x001C;
+
+            if (m.Msg == WM_KEYDOWN)
+            {
+                if ((Keys)(int)m.WParam == Keys.Escape)
+                {
+                    HideMenu(force: true);
+                    return true;
+                }
+            }
+            else if (m.Msg == WM_ACTIVATEAPP)
+            {
+                if (m.WParam == IntPtr.Zero)
+                {
+                    HideMenu(force: true);
+                }
+            }
+            else if (m.Msg == WM_LBUTTONDOWN || m.Msg == WM_RBUTTONDOWN || m.Msg == WM_MBUTTONDOWN ||
+                     m.Msg == WM_NCLBUTTONDOWN || m.Msg == WM_NCRBUTTONDOWN || m.Msg == WM_NCMBUTTONDOWN)
+            {
+                Point screenPt = Control.MousePosition;
+                if (!this.Bounds.Contains(screenPt))
+                {
+                    HideMenu(force: true);
+                }
+            }
+
+            return false;
         }
 
         private void ParentForm_Deactivate(object sender, EventArgs e)
@@ -140,6 +211,9 @@ namespace Mapsui48.Client
         {
             var visibleItems = _items.Where(i => i.IsVisible).ToList();
             if (visibleItems.Count == 0) return;
+
+            HookParentForm();
+            InstallMessageFilter();
 
             TargetLatitude = latitude;
             TargetLongitude = longitude;
@@ -199,14 +273,8 @@ namespace Mapsui48.Client
             }
         }
 
-        public void HideMenu(bool force = false)
+        public void HideMenu(bool force = true)
         {
-            if (!force && (DateTime.UtcNow - _showTime).TotalMilliseconds < 600)
-            {
-                // Debounce: Ignore close requests that arrive within 600ms of opening
-                return;
-            }
-
             _hoverIndex = -1;
             _tooltipForm?.HideTooltip();
             _animTimer?.Stop();
@@ -214,6 +282,7 @@ namespace Mapsui48.Client
             {
                 this.Hide();
             }
+            RemoveMessageFilter();
         }
 
         private void AnimTimer_Tick(object sender, EventArgs e)
@@ -456,6 +525,8 @@ namespace Mapsui48.Client
         {
             if (disposing)
             {
+                RemoveMessageFilter();
+                UnhookParentForm();
                 _animTimer?.Dispose();
                 _tooltipForm?.Dispose();
                 _headerFont?.Dispose();

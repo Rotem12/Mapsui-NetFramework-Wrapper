@@ -85,7 +85,7 @@ namespace Mapsui48.Demo
             if (!IsHandleCreated || IsDisposed) return;
             Invoke((MethodInvoker)delegate
             {
-                if (_styleContextMenu != null && _styleContextMenu.Visible)
+                if ((_styleContextMenu != null && _styleContextMenu.Visible) || (_mapPanel?.ContextMenuOverlay != null && _mapPanel.ContextMenuOverlay.Visible))
                 {
                     _tooltipForm?.Hide();
                     return;

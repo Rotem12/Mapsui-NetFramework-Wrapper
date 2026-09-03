@@ -99,17 +99,18 @@ namespace Mapsui48.Client
                                         this.ContextMenuStrip.Show(this, new System.Drawing.Point((int)e.ScreenX, (int)e.ScreenY));
                                     }
                                 }
+                                else
+                                {
+                                    ContextMenuOverlay?.HideMenu(true);
+                                }
                             }
                             else if (e.Button == "Left")
                             {
-                                if (ContextMenuOverlay != null && ContextMenuOverlay.Visible && (DateTime.UtcNow - ContextMenuOverlay.ShowTime).TotalMilliseconds < 600)
-                                {
-                                    // Ignore spurious Left click right after right click opened the menu
-                                    return;
-                                }
-                                ContextMenuOverlay?.HideMenu();
+                                ContextMenuOverlay?.HideMenu(true);
                             }
+                            MapClicked?.Invoke(this, e);
                         });
+                        return;
                     }
                     catch { }
                 }
@@ -117,12 +118,59 @@ namespace Mapsui48.Client
             };
             _client.MapDoubleClicked += (s, e) => 
             {
-                ContextMenuOverlay?.HideMenu();
+                if (IsHandleCreated && !IsDisposed)
+                {
+                    try
+                    {
+                        BeginInvoke((MethodInvoker)delegate
+                        {
+                            ContextMenuOverlay?.HideMenu(true);
+                            MapDoubleClicked?.Invoke(this, e);
+                        });
+                        return;
+                    }
+                    catch { }
+                }
+                ContextMenuOverlay?.HideMenu(true);
                 MapDoubleClicked?.Invoke(this, e);
             };
-            _client.FeatureClicked += (s, e) => FeatureClicked?.Invoke(this, e);
+            _client.FeatureClicked += (s, e) => 
+            {
+                if (IsHandleCreated && !IsDisposed)
+                {
+                    try
+                    {
+                        BeginInvoke((MethodInvoker)delegate
+                        {
+                            ContextMenuOverlay?.HideMenu(true);
+                            FeatureClicked?.Invoke(this, e);
+                        });
+                        return;
+                    }
+                    catch { }
+                }
+                ContextMenuOverlay?.HideMenu(true);
+                FeatureClicked?.Invoke(this, e);
+            };
             _client.ViewportChanged += (s, e) => 
             {
+                if (IsHandleCreated && !IsDisposed)
+                {
+                    try
+                    {
+                        BeginInvoke((MethodInvoker)delegate
+                        {
+                            if (ContextMenuOverlay != null && ContextMenuOverlay.Visible)
+                            {
+                                ContextMenuOverlay.HideMenu(true);
+                            }
+                            CurrentZoom = e.ZoomLevel;
+                            ViewportChanged?.Invoke(this, e);
+                        });
+                        return;
+                    }
+                    catch { }
+                }
                 CurrentZoom = e.ZoomLevel;
                 ViewportChanged?.Invoke(this, e);
             };
@@ -167,6 +215,7 @@ namespace Mapsui48.Client
                     {
                         BeginInvoke((MethodInvoker)delegate
                         {
+                            ContextMenuOverlay?.HideMenu(true);
                             if (EnableBuiltInDownloadOverlay)
                             {
                                 ShowDownloadOverlay(e);
@@ -177,6 +226,7 @@ namespace Mapsui48.Client
                     }
                     catch { }
                 }
+                ContextMenuOverlay?.HideMenu(true);
                 AreaSelected?.Invoke(this, e);
             };
         }

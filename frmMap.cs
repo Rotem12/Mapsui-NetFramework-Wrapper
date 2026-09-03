@@ -193,7 +193,7 @@ namespace PelcoControlNM
         private void MapPanel_PointerMoved(object sender, MapPointerMovedEvent e)
         {
             if (IsDisposed) return;
-            if ((_styleContextMenu != null && _styleContextMenu.Visible) || (contextMenuStrip1 != null && contextMenuStrip1.Visible))
+            if ((_styleContextMenu != null && _styleContextMenu.Visible) || (contextMenuStrip1 != null && contextMenuStrip1.Visible) || (map?.ContextMenuOverlay != null && map.ContextMenuOverlay.Visible))
             {
                 _floatingTooltip?.Hide();
                 return;
