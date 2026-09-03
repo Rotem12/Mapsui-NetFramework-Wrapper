@@ -162,7 +162,7 @@ namespace Mapsui48.Demo
 
             _chkOfflineMap = new CheckBox
             {
-                Text = "Enable Offline Map (MBTiles)",
+                Text = _mapPanel.EnableOfflineMap ? "Offline Map: Enabled" : "Offline Map: Disabled",
                 AutoSize = true,
                 Location = new System.Drawing.Point(750, 14),
                 Checked = _mapPanel.EnableOfflineMap
@@ -174,11 +174,7 @@ namespace Mapsui48.Demo
                 {
                     _mapPanel.EnableOfflineMap = _chkOfflineMap.Checked;
                 }
-                if (_miOfflineMap != null && _miOfflineMap.Checked != _chkOfflineMap.Checked)
-                {
-                    _miOfflineMap.Checked = _chkOfflineMap.Checked;
-                }
-                lblStatus.Text = $"Offline Map: {(_chkOfflineMap.Checked ? "Enabled" : "Disabled")}";
+                UpdateOfflineMapUI();
             };
 
             panelTop.Controls.Add(_chkOfflineMap);
@@ -733,22 +729,22 @@ namespace Mapsui48.Demo
             _styleContextMenu.Items.Add(miCameraColor);
 
             // 5. Offline Map Toggle
-            _miOfflineMap = new ToolStripMenuItem("Enable Offline Map (MBTiles)")
+            _miOfflineMap = new ToolStripMenuItem(_mapPanel.EnableOfflineMap ? "Disable Offline Map (MBTiles)" : "Enable Offline Map (MBTiles)")
             {
-                CheckOnClick = true,
-                Checked = _mapPanel.EnableOfflineMap
+                Checked = _mapPanel.EnableOfflineMap,
+                ToolTipText = _mapPanel.EnableOfflineMap
+                    ? "Offline map is currently enabled. Click to disable."
+                    : "Offline map is currently disabled. Click to enable."
             };
             _miOfflineMap.Click += (s, e) =>
             {
-                _mapPanel.EnableOfflineMap = _miOfflineMap.Checked;
-                if (_chkOfflineMap != null && _chkOfflineMap.Checked != _miOfflineMap.Checked)
-                {
-                    _chkOfflineMap.Checked = _miOfflineMap.Checked;
-                }
-                lblStatus.Text = $"Offline Map: {(_miOfflineMap.Checked ? "Enabled" : "Disabled")}";
+                _mapPanel.EnableOfflineMap = !_mapPanel.EnableOfflineMap;
+                UpdateOfflineMapUI();
             };
             _styleContextMenu.Items.Add(new ToolStripSeparator());
             _styleContextMenu.Items.Add(_miOfflineMap);
+
+            _styleContextMenu.Opening += (s, e) => UpdateOfflineMapUI();
 
             ApplyDimGrayToMenu(_styleContextMenu);
 
@@ -765,12 +761,35 @@ namespace Mapsui48.Demo
             };
         }
 
+        private void UpdateOfflineMapUI()
+        {
+            bool isEnabled = _mapPanel != null && _mapPanel.EnableOfflineMap;
+            if (_miOfflineMap != null)
+            {
+                _miOfflineMap.Checked = isEnabled;
+                _miOfflineMap.Text = isEnabled ? "Disable Offline Map (MBTiles)" : "Enable Offline Map (MBTiles)";
+                _miOfflineMap.ToolTipText = isEnabled
+                    ? "Offline map is currently enabled. Click to disable."
+                    : "Offline map is currently disabled. Click to enable.";
+            }
+            if (_chkOfflineMap != null)
+            {
+                if (_chkOfflineMap.Checked != isEnabled)
+                {
+                    _chkOfflineMap.Checked = isEnabled;
+                }
+                _chkOfflineMap.Text = isEnabled ? "Offline Map: Enabled" : "Offline Map: Disabled";
+            }
+            lblStatus.Text = $"Offline Map: {(isEnabled ? "Enabled" : "Disabled")}";
+        }
+
         private static void ApplyDimGrayToMenu(ContextMenuStrip menu)
         {
             menu.Renderer = new ToolStripProfessionalRenderer(new DimGrayColorTable());
             menu.BackColor = Color.DimGray;
             menu.ForeColor = Color.White;
             menu.ShowImageMargin = false;
+            menu.ShowCheckMargin = true;
 
             foreach (ToolStripItem item in menu.Items)
             {

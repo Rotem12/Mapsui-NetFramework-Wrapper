@@ -60,10 +60,30 @@ namespace PelcoControlNM
         public string TargetColor { get; set; } = "#EF4444";
         public string HighlightColor { get; set; } = "#00E5FF";
 
+        private ToolStripMenuItem _miOfflineMap;
+
         public bool EnableOfflineMap
         {
             get => map.EnableOfflineMap;
-            set => map.EnableOfflineMap = value;
+            set
+            {
+                map.EnableOfflineMap = value;
+                UpdateOfflineMapMenuItem();
+            }
+        }
+
+        private void UpdateOfflineMapMenuItem()
+        {
+            if (_miOfflineMap != null)
+            {
+                _miOfflineMap.Checked = EnableOfflineMap;
+                _miOfflineMap.Text = EnableOfflineMap
+                    ? "Disable Offline Map (MBTiles)"
+                    : "Enable Offline Map (MBTiles)";
+                _miOfflineMap.ToolTipText = EnableOfflineMap
+                    ? "Offline map is currently enabled. Click to disable."
+                    : "Offline map is currently disabled. Click to enable.";
+            }
         }
 
         // Viewport tracking
@@ -626,18 +646,23 @@ namespace PelcoControlNM
             menu.Items.Add(miCameraColor);
 
             // 5. Offline Map Toggle
-            var miOfflineMap = new ToolStripMenuItem("Enable Offline Map (MBTiles)")
+            _miOfflineMap = new ToolStripMenuItem(EnableOfflineMap ? "Disable Offline Map (MBTiles)" : "Enable Offline Map (MBTiles)")
             {
-                CheckOnClick = true,
-                Checked = EnableOfflineMap
+                Checked = EnableOfflineMap,
+                ToolTipText = EnableOfflineMap
+                    ? "Offline map is currently enabled. Click to disable."
+                    : "Offline map is currently disabled. Click to enable."
             };
-            miOfflineMap.Click += (s, e) =>
+            _miOfflineMap.Click += (s, e) =>
             {
-                EnableOfflineMap = miOfflineMap.Checked;
+                EnableOfflineMap = !EnableOfflineMap;
+                UpdateOfflineMapMenuItem();
                 SaveStyleSettings();
             };
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add(miOfflineMap);
+            menu.Items.Add(_miOfflineMap);
+
+            menu.Opening += (s, e) => UpdateOfflineMapMenuItem();
 
             ApplyDimGrayTheme(menu);
         }
@@ -648,6 +673,7 @@ namespace PelcoControlNM
             menu.BackColor = Color.DimGray;
             menu.ForeColor = Color.White;
             menu.ShowImageMargin = false;
+            menu.ShowCheckMargin = true;
 
             foreach (ToolStripItem item in menu.Items)
             {
